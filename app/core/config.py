@@ -9,6 +9,8 @@ class AppSettings(BaseSettings):
     app_version: str = Field(default="0.1.0")
     app_debug: bool = Field(default=False)
 
+    database_url: str
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -18,7 +20,7 @@ class AppSettings(BaseSettings):
 
 @lru_cache
 def get_settings() -> AppSettings:
-    return AppSettings()
+    return AppSettings()  # pyright: ignore[reportCallIssue]
 
 
 settings = get_settings()
