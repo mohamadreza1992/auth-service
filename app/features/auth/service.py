@@ -1,5 +1,7 @@
+from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import hash_password
 from app.features.auth.models import User
 from app.features.auth.repository import (
     create_user,
@@ -18,11 +20,14 @@ async def register_user(
     )
 
     if existing_user:
-        raise ValueError("Email already registered")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
+        )
 
     user = User(
         email=user_data.email,
-        password_hash=user_data.password,
+        password_hash=hash_password(user_data.password),
         is_active=True,
     )
 
