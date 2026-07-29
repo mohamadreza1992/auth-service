@@ -11,6 +11,10 @@ class AppSettings(BaseSettings):
 
     database_url: str
 
+    jwt_secret_key: str
+    jwt_algorithm: str = Field(default="HS256")
+    jwt_access_token_expire_minutes: int = Field(default=30)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
