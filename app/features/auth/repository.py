@@ -23,3 +23,12 @@ async def create_user(
     await db.refresh(user)
 
     return user
+
+
+async def get_user_by_id(
+    db: AsyncSession,
+    id: int,
+) -> User | None:
+    result = await db.execute(select(User).where(User.id == id))
+
+    return result.scalar_one_or_none()
