@@ -3,8 +3,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import get_db
 from app.features.auth.dependencies import get_current_user
-from app.features.auth.schemas import Token, UserCreate, UserLogin, UserResponse
-from app.features.auth.service import login_user, register_user
+from app.features.auth.schemas import (
+    RefreshTokenRequest,
+    Token,
+    UserCreate,
+    UserLogin,
+    UserResponse,
+)
+from app.features.auth.service import login_user, refresh_access_token, register_user
 
 router = APIRouter(
     prefix="/auth",
@@ -51,3 +57,8 @@ async def logout(
     return {
         "message": "Successfully logged out",
     }
+
+
+@router.post("/refresh", response_model=Token)
+async def refresh(data: RefreshTokenRequest):
+    return await refresh_access_token(data)
