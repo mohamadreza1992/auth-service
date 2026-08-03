@@ -22,5 +22,14 @@ services:
 
     restart: unless-stopped
 
+  redis:
+    image: redis:8
+    container_name: auth_redis
+
+    ports:
+      - "6379:6379"
+
+    restart: unless-stopped
+
 volumes:
   postgres_data:

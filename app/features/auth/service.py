@@ -1,12 +1,18 @@
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_refresh_token,
     hash_password,
     verify_password,
+)
+from app.core.token_store import (
+    delete_refresh_token,
+    get_refresh_token,
+    save_refresh_token,
 )
 from app.features.auth.models import User
 from app.features.auth.repository import (
@@ -72,6 +78,11 @@ async def login_user(
     refresh_token = create_refresh_token(
         data={"sub": str(user.id), "email": user.email},
     )
+    await save_refresh_token(
+        user_id=user.id,
+        token=refresh_token,
+        expire_seconds=settings.jwt_refresh_token_expire_days * 24 * 60 * 60,
+    )
     return Token(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -91,6 +102,14 @@ async def refresh_access_token(data: RefreshTokenRequest):
             detail="Invalid refresh token",
         )
 
+    stored_token = await get_refresh_token(int(user_id))
+
+    if stored_token != data.refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+
     access_token = create_access_token(
         data={
             "sub": user_id,
@@ -103,3 +122,9 @@ async def refresh_access_token(data: RefreshTokenRequest):
         refresh_token=data.refresh_token,
         token_type="bearer",
     )
+
+
+async def logout_user(user_id: int):
+    await delete_refresh_token(user_id)
+
+    return {"message": "Successfully logged out"}

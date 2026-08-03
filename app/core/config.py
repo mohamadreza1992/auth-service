@@ -10,6 +10,7 @@ class AppSettings(BaseSettings):
     app_debug: bool = Field(default=False)
 
     database_url: str
+    redis_url: str
 
     jwt_secret_key: str
     jwt_algorithm: str = Field(default="HS256")

@@ -10,7 +10,12 @@ from app.features.auth.schemas import (
     UserLogin,
     UserResponse,
 )
-from app.features.auth.service import login_user, refresh_access_token, register_user
+from app.features.auth.service import (
+    login_user,
+    logout_user,
+    refresh_access_token,
+    register_user,
+)
 
 router = APIRouter(
     prefix="/auth",
@@ -54,9 +59,7 @@ async def me(
 async def logout(
     current_user=Depends(get_current_user),
 ):
-    return {
-        "message": "Successfully logged out",
-    }
+    return await logout_user(current_user.id)
 
 
 @router.post("/refresh", response_model=Token)
