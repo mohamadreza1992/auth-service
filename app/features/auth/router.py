@@ -12,6 +12,7 @@ from app.features.auth.schemas import (
 )
 from app.features.auth.service import (
     login_user,
+    logout_all_users,
     logout_user,
     refresh_access_token,
     register_user,
@@ -50,18 +51,23 @@ async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
 
 @router.get("/me", response_model=UserResponse)
 async def me(
-    current_user=Depends(get_current_user),
+    auth=Depends(get_current_user),
 ):
-    return current_user
+    return auth.user
 
 
 @router.post("/logout")
 async def logout(
-    current_user=Depends(get_current_user),
+    auth=Depends(get_current_user),
 ):
-    return await logout_user(current_user.id)
+    return await logout_user(user_id=auth.user.id, session_id=auth.session_id)
 
 
 @router.post("/refresh", response_model=Token)
 async def refresh(data: RefreshTokenRequest):
     return await refresh_access_token(data)
+
+
+@router.post("/logout-all")
+async def logout_all(auth=Depends(get_current_user)):
+    return await logout_all_users(auth.user.id)

@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +12,7 @@ from app.core.security import (
     verify_password,
 )
 from app.core.token_store import (
+    delete_all_refresh_tokens,
     delete_refresh_token,
     get_refresh_token,
     save_refresh_token,
@@ -71,15 +74,18 @@ async def login_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
+    session_id = str(uuid.uuid4())
 
     access_token = create_access_token(
-        data={"sub": str(user.id), "email": user.email},
+        data={"sub": str(user.id), "email": user.email, "session_id": session_id},
     )
+
     refresh_token = create_refresh_token(
-        data={"sub": str(user.id), "email": user.email},
+        data={"sub": str(user.id), "email": user.email, "session_id": session_id},
     )
     await save_refresh_token(
         user_id=user.id,
+        session_id=session_id,
         token=refresh_token,
         expire_seconds=settings.jwt_refresh_token_expire_days * 24 * 60 * 60,
     )
@@ -95,36 +101,65 @@ async def refresh_access_token(data: RefreshTokenRequest):
 
     user_id = payload.get("sub")
     email = payload.get("email")
+    session_id = payload.get("session_id")
 
     if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token",
         )
+    if session_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
 
-    stored_token = await get_refresh_token(int(user_id))
+    stored_token = await get_refresh_token(int(user_id), session_id)
 
     if stored_token != data.refresh_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token",
         )
+    await delete_refresh_token(int(user_id), session_id)
 
     access_token = create_access_token(
         data={
             "sub": user_id,
             "email": email,
+            "session_id": session_id,
         }
+    )
+    new_refresh_token = create_refresh_token(
+        data={
+            "sub": user_id,
+            "email": email,
+            "session_id": session_id,
+        }
+    )
+    await save_refresh_token(
+        user_id=int(user_id),
+        session_id=session_id,
+        token=new_refresh_token,
+        expire_seconds=settings.jwt_refresh_token_expire_days * 24 * 60 * 60,
     )
 
     return Token(
         access_token=access_token,
-        refresh_token=data.refresh_token,
+        refresh_token=new_refresh_token,
         token_type="bearer",
     )
 
 
-async def logout_user(user_id: int):
-    await delete_refresh_token(user_id)
+async def logout_user(user_id: int, session_id: str):
+    await delete_refresh_token(user_id, session_id)
 
     return {"message": "Successfully logged out"}
+
+
+async def logout_all_users(user_id: int):
+    await delete_all_refresh_tokens(user_id)
+
+    return {
+        "message": "Successfully logged out from all devices",
+    }
