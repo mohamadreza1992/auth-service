@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.core.token_blacklist import blacklist_token
 from app.core.token_store import (
     delete_all_refresh_tokens,
     delete_refresh_token,
@@ -151,8 +153,21 @@ async def refresh_access_token(data: RefreshTokenRequest):
     )
 
 
-async def logout_user(user_id: int, session_id: str):
-    await delete_refresh_token(user_id, session_id)
+async def logout_user(user_id: int, session_id: str, token_jti: str, token_exp: int):
+    await delete_refresh_token(
+        user_id,
+        session_id,
+    )
+    print("USER ID:", user_id)
+    print("SESSION ID:", session_id)
+
+    remaining_time = token_exp - int(datetime.now(UTC).timestamp())
+
+    if remaining_time > 0:
+        await blacklist_token(
+            token_jti,
+            remaining_time,
+        )
 
     return {"message": "Successfully logged out"}
 

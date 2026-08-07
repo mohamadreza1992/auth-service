@@ -60,7 +60,12 @@ async def me(
 async def logout(
     auth=Depends(get_current_user),
 ):
-    return await logout_user(user_id=auth.user.id, session_id=auth.session_id)
+    return await logout_user(
+        user_id=auth.user.id,
+        session_id=auth.session_id,
+        token_jti=auth.token_jti,
+        token_exp=auth.token_exp,
+    )
 
 
 @router.post("/refresh", response_model=Token)

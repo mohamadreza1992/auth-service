@@ -5,6 +5,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_access_token
+from app.core.token_blacklist import is_token_blacklisted
 from app.database.session import get_db
 from app.features.auth.models import User
 from app.features.auth.repository import get_user_by_id
@@ -14,6 +15,8 @@ from app.features.auth.repository import get_user_by_id
 class AuthContext:
     user: User
     session_id: str
+    token_jti: str
+    token_exp: int
 
 
 oauth2_scheme = OAuth2PasswordBearer(
@@ -29,6 +32,26 @@ async def get_current_user(
 
     user_id = payload.get("sub")
     session_id = payload.get("session_id")
+    jti = payload.get("jti")
+    exp = payload.get("exp")
+
+    if exp is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        )
+
+    if jti is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        )
+
+    if await is_token_blacklisted(jti):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked",
+        )
 
     if session_id is None:
         raise HTTPException(
@@ -52,7 +75,4 @@ async def get_current_user(
             detail="Invalid credentials",
         )
 
-    return AuthContext(
-        user=user,
-        session_id=session_id,
-    )
+    return AuthContext(user=user, session_id=session_id, token_jti=jti, token_exp=exp)
