@@ -20,7 +20,12 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pre-commit>=4.6.0", "pytest>=9.1.1", "ruff>=0.15.22"]
+dev = [
+    "httpx2>=2.10.0",
+    "pre-commit>=4.6.0",
+    "pytest>=9.1.1",
+    "ruff>=0.15.22",
+]
 
 [tool.ruff]
 line-length = 88
