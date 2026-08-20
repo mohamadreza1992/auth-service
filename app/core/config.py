@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 
 from pydantic import Field
@@ -8,6 +9,7 @@ class AppSettings(BaseSettings):
     app_name: str = Field(default="Auth Service")
     app_version: str = Field(default="0.1.0")
     app_debug: bool = Field(default=False)
+    app_env: str
 
     database_url: str
     redis_url: str
@@ -26,7 +28,12 @@ class AppSettings(BaseSettings):
 
 @lru_cache
 def get_settings() -> AppSettings:
-    return AppSettings()  # pyright: ignore[reportCallIssue]
+    environment = os.getenv("APP_ENV", "development")
+    if environment == "test":
+        env_file = ".env.test"
+    else:
+        env_file = ".env"
+    return AppSettings(_env_file=env_file)  # pyright: ignore[reportCallIssue]
 
 
 settings = get_settings()

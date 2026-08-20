@@ -1,0 +1,44 @@
+services:
+  postgres_test:
+    image: postgres:17-alpine
+    container_name: auth_test_db
+
+
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: auth_test_db
+
+    ports:
+      - "5433:5432"
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis_test:
+    image: redis:8
+    container_name: auth_redis_test
+
+    ports:
+      - "6380:6379"  
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5      
+
+  postgres_migration_test:
+    image: postgres:17-alpine
+    container_name: auth_migration_db
+
+    environment:
+      POSTGRES_USER: migration_user
+      POSTGRES_PASSWORD: migration_password
+      POSTGRES_DB: auth_migration_db
+
+    ports:
+      - "5434:5432"    
