@@ -20,7 +20,16 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pre-commit>=4.6.0", "pytest>=9.1.1", "ruff>=0.15.22"]
+dev = [
+    "httpx2>=2.10.0",
+    "pre-commit>=4.6.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.15.22",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 88
