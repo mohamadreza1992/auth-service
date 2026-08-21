@@ -5,6 +5,7 @@ os.environ["APP_ENV"] = "test"
 from collections.abc import AsyncGenerator
 
 import pytest
+import pytest_asyncio
 from httpx2 import ASGITransport, AsyncClient
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import (
@@ -18,7 +19,7 @@ from app.core.config import settings
 from app.main import app
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client():
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -32,16 +33,16 @@ def test_settings():
     return settings
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def db_engine() -> AsyncGenerator[AsyncEngine]:
-    engine = create_async_engine(settings.database_url)
+    engine = create_async_engine(settings.database_url, echo=False)
 
     yield engine
 
     await engine.dispose()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def redis_client() -> AsyncGenerator[Redis]:
     client = Redis.from_url(
         settings.redis_url,
@@ -53,7 +54,7 @@ async def redis_client() -> AsyncGenerator[Redis]:
     await client.aclose()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def db_session(
     db_engine: AsyncEngine,
 ) -> AsyncGenerator[AsyncSession]:

@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import text
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_alembic_upgrade(db_engine):
     result = subprocess.run(
         ["uv", "run", "alembic", "upgrade", "head"],

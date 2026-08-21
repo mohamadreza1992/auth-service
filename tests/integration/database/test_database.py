@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import text
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_database_connection(db_engine):
 
     async with db_engine.connect() as conn:
