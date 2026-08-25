@@ -48,10 +48,12 @@ async def register_user(
         is_active=True,
     )
 
-    return await create_user(
+    user = await create_user(
         db,
         user,
     )
+    await db.commit()
+    return user
 
 
 async def login_user(
@@ -99,7 +101,13 @@ async def login_user(
 
 
 async def refresh_access_token(data: RefreshTokenRequest):
-    payload = decode_refresh_token(data.refresh_token)
+    try:
+        payload = decode_refresh_token(data.refresh_token)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        ) from None
 
     user_id = payload.get("sub")
     email = payload.get("email")
