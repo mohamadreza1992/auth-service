@@ -6,6 +6,7 @@ from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -26,6 +27,8 @@ from app.features.auth.repository import (
     get_user_by_email,
 )
 from app.features.auth.schemas import RefreshTokenRequest, Token, UserCreate, UserLogin
+
+logger = get_logger(__name__)
 
 
 async def register_user(
@@ -173,8 +176,13 @@ async def logout_user(user_id: int, session_id: str, token_jti: str, token_exp: 
         user_id,
         session_id,
     )
-    print("USER ID:", user_id)
-    print("SESSION ID:", session_id)
+    logger.info(
+        "User logged out",
+        extra={
+            "user_id": user_id,
+            "session_id": session_id,
+        },
+    )
 
     remaining_time = token_exp - int(datetime.now(UTC).timestamp())
 
