@@ -13,6 +13,7 @@ class AppSettings(BaseSettings):
 
     database_url: str
     redis_url: str
+    log_level: str = "INFO"
 
     jwt_secret_key: str
     jwt_algorithm: str = Field(default="HS256")
