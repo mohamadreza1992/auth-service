@@ -31,14 +31,4 @@ services:
       timeout: 5s
       retries: 5      
 
-  postgres_migration_test:
-    image: postgres:17-alpine
-    container_name: auth_migration_db
-
-    environment:
-      POSTGRES_USER: migration_user
-      POSTGRES_PASSWORD: migration_password
-      POSTGRES_DB: auth_migration_db
-
-    ports:
-      - "5434:5432"    
+  

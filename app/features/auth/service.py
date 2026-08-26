@@ -1,11 +1,15 @@
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import HTTPException, status
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.exceptions import (
+    InvalidCredentials,
+    InvalidRefreshToken,
+    UserAlreadyExists,
+)
 from app.core.logging import get_logger
 from app.core.security import (
     create_access_token,
@@ -41,10 +45,7 @@ async def register_user(
     )
 
     if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
-        )
+        raise UserAlreadyExists()
 
     user = User(
         email=user_data.email,
@@ -69,26 +70,18 @@ async def login_user(
         user_data.email,
     )
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-        )
+        raise InvalidCredentials()
 
     if not verify_password(
         user_data.password,
         user.password_hash,
     ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-        )
+        raise InvalidCredentials()
+
     session_id = str(uuid.uuid4())
 
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-        )
+        raise InvalidCredentials()
 
     access_token = create_access_token(
         data={"sub": str(user.id), "email": user.email, "session_id": session_id},
@@ -114,33 +107,21 @@ async def refresh_access_token(data: RefreshTokenRequest):
     try:
         payload = decode_refresh_token(data.refresh_token)
     except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
-        ) from None
+        raise InvalidRefreshToken() from None
 
     user_id = payload.get("sub")
     email = payload.get("email")
     session_id = payload.get("session_id")
 
     if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
-        )
+        raise InvalidRefreshToken()
     if session_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
-        )
+        raise InvalidRefreshToken()
 
     stored_token = await get_refresh_token(int(user_id), session_id)
 
     if stored_token != data.refresh_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
-        )
+        raise InvalidRefreshToken()
     await delete_refresh_token(int(user_id), session_id)
 
     access_token = create_access_token(

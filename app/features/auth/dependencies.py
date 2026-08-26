@@ -1,10 +1,15 @@
 from dataclasses import dataclass
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import (
+    InvalidCredentials,
+    InvalidToken,
+    RevokedToken,
+)
 from app.core.security import decode_access_token
 from app.core.token_blacklist import is_token_blacklisted
 from app.database.session import get_db
@@ -32,10 +37,7 @@ async def get_current_user(
     try:
         payload = decode_access_token(token)
     except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-        ) from None
+        raise InvalidCredentials() from None
 
     user_id = payload.get("sub")
     session_id = payload.get("session_id")
@@ -43,33 +45,17 @@ async def get_current_user(
     exp = payload.get("exp")
 
     if exp is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
-
+        raise InvalidToken()
     if jti is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
+        raise InvalidToken()
 
     if await is_token_blacklisted(jti):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has been revoked",
-        )
+        raise RevokedToken()
 
     if session_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-        )
+        raise InvalidCredentials()
     if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-        )
+        raise InvalidCredentials()
 
     user = await get_user_by_id(
         db,
@@ -77,14 +63,8 @@ async def get_current_user(
     )
 
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-        )
+        raise InvalidCredentials()
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-        )
+        raise InvalidCredentials()
 
     return AuthContext(user=user, session_id=session_id, token_jti=jti, token_exp=exp)
