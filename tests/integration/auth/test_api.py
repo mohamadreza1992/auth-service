@@ -2,7 +2,8 @@ from datetime import timedelta
 
 import pytest
 
-from app.core.security import create_access_token, create_refresh_token
+from app.core.security import create_access_token, create_refresh_token, hash_password
+from app.features.auth.models import User
 
 
 @pytest.mark.asyncio
@@ -231,6 +232,32 @@ async def test_login_missing_password(client):
 
 
 @pytest.mark.asyncio
+async def test_login_inactive_user(
+    client,
+    db_session,
+):
+    user = User(
+        email="inactive@example.com",
+        password_hash=hash_password("password123"),
+        is_active=False,
+    )
+
+    db_session.add(user)
+    await db_session.commit()
+
+    response = await client.post(
+        "/auth/login",
+        json={
+            "email": "inactive@example.com",
+            "password": "password123",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid credentials"
+
+
+@pytest.mark.asyncio
 async def test_refresh_success(client):
     user_data = {
         "email": "api-refresh@example.com",
@@ -438,6 +465,45 @@ async def test_refresh_with_access_token(client):
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid refresh token"
+
+
+@pytest.mark.asyncio
+async def test_inactive_user_cannot_access_with_old_token(
+    client,
+    db_session,
+):
+    user = User(
+        email="active@example.com",
+        password_hash=hash_password("password123"),
+        is_active=True,
+    )
+
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    login_response = await client.post(
+        "/auth/login",
+        json={
+            "email": "active@example.com",
+            "password": "password123",
+        },
+    )
+
+    assert login_response.status_code == 200
+
+    access_token = login_response.json()["access_token"]
+
+    user.is_active = False
+    await db_session.commit()
+
+    response = await client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid credentials"
 
 
 @pytest.mark.asyncio

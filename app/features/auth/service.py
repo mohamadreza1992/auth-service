@@ -81,6 +81,12 @@ async def login_user(
         )
     session_id = str(uuid.uuid4())
 
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+
     access_token = create_access_token(
         data={"sub": str(user.id), "email": user.email, "session_id": session_id},
     )
