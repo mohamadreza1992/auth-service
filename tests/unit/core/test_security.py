@@ -119,5 +119,5 @@ def test_create_refresh_token_with_custom_expiration():
 def test_decode_refresh_token_with_access_token():
     data = {"sub": "123"}
     token = create_access_token(data)
-    with pytest.raises(ValueError):
+    with pytest.raises(JWTError):
         decode_refresh_token(token)

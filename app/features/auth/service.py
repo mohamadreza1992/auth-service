@@ -2,6 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
+from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -103,7 +104,7 @@ async def login_user(
 async def refresh_access_token(data: RefreshTokenRequest):
     try:
         payload = decode_refresh_token(data.refresh_token)
-    except ValueError:
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token",

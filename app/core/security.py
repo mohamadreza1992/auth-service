@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from jose import jwt
+from jose import JWTError, jwt
 from pwdlib import PasswordHash
 
 from app.core.config import settings
@@ -38,6 +38,8 @@ def decode_access_token(
     payload = jwt.decode(
         token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]
     )
+    if payload.get("type") != "access":
+        raise JWTError("invalid access token")
 
     return payload
 
@@ -70,6 +72,6 @@ def decode_refresh_token(
         token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]
     )
     if payload.get("type") != "refresh":
-        raise ValueError("invalid refresh token")
+        raise JWTError("invalid refresh token")
 
     return payload
