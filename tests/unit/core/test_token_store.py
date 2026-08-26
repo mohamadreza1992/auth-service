@@ -11,7 +11,7 @@ from app.core.token_store import (
 )
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_get_refresh_token_when_redis_returns_none(monkeypatch):
     user_id = 123
     session_id = "session-1"
@@ -22,7 +22,7 @@ async def test_get_refresh_token_when_redis_returns_none(monkeypatch):
     assert result is None
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_get_refresh_token_when_redis_returns_bytes(monkeypatch):
     user_id = 123
     session_id = "session-1"
@@ -34,7 +34,7 @@ async def test_get_refresh_token_when_redis_returns_bytes(monkeypatch):
     assert result == "refresh_token"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_get_refresh_token_when_redis_returns_string(monkeypatch):
     user_id = 123
     session_id = "session-1"
@@ -46,7 +46,7 @@ async def test_get_refresh_token_when_redis_returns_string(monkeypatch):
     assert result == "refresh_token"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_get_refresh_token_uses_expected_redis_key(monkeypatch):
     user_id = 123
     session_id = "session-1"
@@ -58,7 +58,7 @@ async def test_get_refresh_token_uses_expected_redis_key(monkeypatch):
     mock_redis.get.assert_awaited_once_with(expected_key)
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_save_refresh_token_uses_expected_redis_parameters(monkeypatch):
     user_id = 123
     session_id = "session-1"
@@ -71,7 +71,7 @@ async def test_save_refresh_token_uses_expected_redis_parameters(monkeypatch):
     mock_redis.set.assert_awaited_once_with(expected_key, token, ex=expire_seconds)
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_delete_refresh_token_uses_expected_redis_key(monkeypatch):
     user_id = 123
     session_id = "session-1"
@@ -82,7 +82,7 @@ async def test_delete_refresh_token_uses_expected_redis_key(monkeypatch):
     mock_redis.delete.assert_awaited_once_with(expected_key)
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_delete_all_refresh_tokens_scans_with_expected_pattern(monkeypatch):
     user_id = 123
     mock_redis = AsyncMock()
@@ -100,7 +100,7 @@ async def test_delete_all_refresh_tokens_scans_with_expected_pattern(monkeypatch
     mock_redis.scan_iter.assert_called_once_with(match=expected_pattern)
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_delete_all_refresh_tokens_deletes_all_scanned_keys(monkeypatch):
     user_id = 123
     mock_redis = AsyncMock()
