@@ -10,6 +10,7 @@ from app.features.sessions.session_store import (
     get_session,
     save_session,
     touch_session,
+    update_session_jti,
 )
 
 
@@ -53,3 +54,11 @@ async def revoke_all_sessions(user_id: int):
 
 async def refresh_session_activity(user_id: int, session_id: str):
     await touch_session(user_id, session_id)
+
+
+async def rotate_session_jti(
+    user_id: int,
+    session_id: str,
+    jti: str,
+):
+    await update_session_jti(user_id, session_id, jti)

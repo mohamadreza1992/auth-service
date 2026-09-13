@@ -44,7 +44,9 @@ def decode_access_token(
     return payload
 
 
-def create_refresh_token(data: dict, expires_delta: timedelta | None = None) -> str:
+def create_refresh_token(
+    data: dict, jti: str, expires_delta: timedelta | None = None
+) -> str:
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(UTC) + expires_delta
@@ -56,7 +58,7 @@ def create_refresh_token(data: dict, expires_delta: timedelta | None = None) -> 
         {
             "exp": expire,
             "type": "refresh",
-            "jti": str(uuid.uuid4()),
+            "jti": jti,
         }
     )
     encoded_jwt = jwt.encode(

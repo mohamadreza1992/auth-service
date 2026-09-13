@@ -38,3 +38,18 @@ async def touch_session(user_id: int, session_id: str) -> None:
     session.last_used_at = datetime.now(UTC)
 
     await redis_client.set(key, session.model_dump_json(), keepttl=True)
+
+
+async def update_session_jti(
+    user_id: int,
+    session_id: str,
+    jti: str,
+) -> None:
+    key = f"session:{user_id}:{session_id}"
+    data = await redis_client.get(key)
+    if data is None:
+        return
+    session = Session.model_validate_json(data)
+    session.jti = jti
+
+    await redis_client.set(key, session.model_dump_json(), keepttl=True)
