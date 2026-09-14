@@ -53,3 +53,19 @@ async def update_session_jti(
     session.jti = jti
 
     await redis_client.set(key, session.model_dump_json(), keepttl=True)
+
+
+async def get_all_sessions(user_id: int) -> list[Session]:
+    pattern = f"session:{user_id}:*"
+    sessions: list[Session] = []
+
+    async for key in redis_client.scan_iter(match=pattern):
+        data = await redis_client.get(key)
+
+        if data is None:
+            continue
+
+        session = Session.model_validate_json(data)
+        sessions.append(session)
+
+    return sessions
