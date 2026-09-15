@@ -94,24 +94,28 @@ def test_decode_access_token_with_invalid_signature():
 def test_create_and_decode_refresh_token():
     data = {"sub": "abc"}
 
-    refresh_token = create_refresh_token(data)
+    refresh_token = create_refresh_token(data, jti="test-jti")
     payload = decode_refresh_token(refresh_token)
 
     assert payload["sub"] == "abc"
     assert payload["type"] == "refresh"
+    assert payload["jti"] == "test-jti"
 
 
 def test_create_refresh_token_with_custom_expiration():
     data = {"sub": "123"}
     now = datetime.now(UTC)
 
-    refresh_token = create_refresh_token(data, expires_delta=timedelta(days=7))
+    refresh_token = create_refresh_token(
+        data, jti="test-jti", expires_delta=timedelta(days=7)
+    )
     payload = decode_refresh_token(refresh_token)
     actual_exp = datetime.fromtimestamp(payload["exp"], UTC)
     expected_exp = now + timedelta(days=7)
 
     assert payload["sub"] == "123"
     assert payload["type"] == "refresh"
+    assert payload["jti"] == "test-jti"
     difference = abs(actual_exp - expected_exp)
     assert difference < timedelta(seconds=5)
 
