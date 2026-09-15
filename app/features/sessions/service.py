@@ -68,9 +68,15 @@ async def refresh_session_activity(user_id: int, session_id: str):
 async def rotate_session_jti(
     user_id: int,
     session_id: str,
-    jti: str,
-):
-    await update_session_jti(user_id, session_id, jti)
+    expected_jti: str,
+    new_jti: str,
+) -> bool:
+    return await update_session_jti(
+        user_id,
+        session_id,
+        expected_jti,
+        new_jti,
+    )
 
 
 async def list_user_sessions(user_id: int) -> list[SessionResponse]:

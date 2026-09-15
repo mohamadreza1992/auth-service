@@ -147,7 +147,7 @@ async def test_refresh_session_activity(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_rotate_session_jti(monkeypatch):
-    update_mock = AsyncMock()
+    update_mock = AsyncMock(return_value=True)
 
     monkeypatch.setattr(
         service,
@@ -155,15 +155,19 @@ async def test_rotate_session_jti(monkeypatch):
         update_mock,
     )
 
-    await service.rotate_session_jti(
+    result = await service.rotate_session_jti(
         123,
         "session-1",
+        "old-jti",
         "new-jti",
     )
+
+    assert result is True
 
     update_mock.assert_awaited_once_with(
         123,
         "session-1",
+        "old-jti",
         "new-jti",
     )
 

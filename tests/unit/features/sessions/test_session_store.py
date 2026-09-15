@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, Mock, call
 from uuid import uuid4
 
 import pytest
+from redis.exceptions import WatchError
 
 import app.features.sessions.session_store as session_store
 from app.features.sessions.schemas import Session
@@ -180,38 +181,81 @@ async def test_touch_session_updates_last_used_at(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_update_session_jti_does_nothing_when_session_not_found(monkeypatch):
-    mock_redis = AsyncMock()
+    mock_redis = Mock()
+    mock_pipeline = Mock()
+
     monkeypatch.setattr(session_store, "redis_client", mock_redis)
 
-    mock_redis.get.return_value = None
+    mock_redis.pipeline.return_value = mock_pipeline
 
-    await update_session_jti(123, "session-1", "new-jti")
+    mock_pipeline.__aenter__ = AsyncMock(return_value=mock_pipeline)
+    mock_pipeline.__aexit__ = AsyncMock(return_value=None)
 
-    mock_redis.set.assert_not_awaited()
+    mock_pipeline.watch = AsyncMock()
+    mock_pipeline.get = AsyncMock(return_value=None)
+    mock_pipeline.unwatch = AsyncMock()
+
+    result = await update_session_jti(
+        123,
+        "session-1",
+        "old-jti",
+        "new-jti",
+    )
+
+    assert result is False
+    mock_pipeline.watch.assert_awaited_once_with(
+        "session:123:session-1",
+    )
+    mock_pipeline.get.assert_awaited_once_with(
+        "session:123:session-1",
+    )
+    mock_pipeline.unwatch.assert_awaited_once()
+    mock_pipeline.set.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_update_session_jti_updates_jti(monkeypatch):
-    mock_redis = AsyncMock()
+    mock_redis = Mock()
+    mock_pipeline = Mock()
+
     monkeypatch.setattr(session_store, "redis_client", mock_redis)
+
+    mock_redis.pipeline.return_value = mock_pipeline
+
+    mock_pipeline.__aenter__ = AsyncMock(return_value=mock_pipeline)
+    mock_pipeline.__aexit__ = AsyncMock(return_value=None)
+
+    mock_pipeline.watch = AsyncMock()
+    mock_pipeline.get = AsyncMock()
+    mock_pipeline.unwatch = AsyncMock()
+    mock_pipeline.execute = AsyncMock(return_value=[True])
 
     session = make_session(jti="old-jti")
 
-    mock_redis.get.return_value = session.model_dump_json()
+    mock_pipeline.get.return_value = session.model_dump_json()
 
-    await update_session_jti(
+    result = await update_session_jti(
         123,
         str(session.session_id),
+        "old-jti",
         "new-jti",
     )
 
-    args, kwargs = mock_redis.set.await_args
+    assert result is True
+
+    mock_pipeline.multi.assert_called_once()
+
+    mock_pipeline.set.assert_called_once()
+
+    args, kwargs = mock_pipeline.set.call_args
     data = args[1]
 
     updated_session = Session.model_validate_json(data)
 
     assert updated_session.jti == "new-jti"
     assert kwargs == {"keepttl": True}
+
+    mock_pipeline.execute.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -262,3 +306,37 @@ async def test_get_all_sessions_skips_deleted_session(monkeypatch):
 
     assert len(result) == 1
     assert result[0].session_id == session.session_id
+
+
+@pytest.mark.asyncio
+async def test_update_session_jti_returns_false_on_watch_error(monkeypatch):
+    mock_redis = Mock()
+    mock_pipeline = Mock()
+
+    monkeypatch.setattr(session_store, "redis_client", mock_redis)
+
+    mock_redis.pipeline.return_value = mock_pipeline
+
+    mock_pipeline.__aenter__ = AsyncMock(return_value=mock_pipeline)
+    mock_pipeline.__aexit__ = AsyncMock(return_value=None)
+
+    mock_pipeline.watch = AsyncMock()
+    mock_pipeline.get = AsyncMock(
+        return_value=make_session(jti="old-jti").model_dump_json()
+    )
+    mock_pipeline.execute = AsyncMock(side_effect=WatchError())
+
+    result = await update_session_jti(
+        123,
+        "session-1",
+        "old-jti",
+        "new-jti",
+    )
+
+    assert result is False
+
+    mock_pipeline.watch.assert_awaited_once_with(
+        "session:123:session-1",
+    )
+
+    mock_pipeline.execute.assert_awaited_once()
