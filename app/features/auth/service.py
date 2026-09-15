@@ -160,11 +160,15 @@ async def refresh_access_token(data: RefreshTokenRequest):
         jti=new_jti,
     )
 
-    await rotate_session_jti(
+    updated = await rotate_session_jti(
         user_id=int(user_id),
         session_id=session_id,
-        jti=new_jti,
+        expected_jti=jti,
+        new_jti=new_jti,
     )
+
+    if not updated:
+        raise InvalidRefreshToken()
 
     return Token(
         access_token=access_token,

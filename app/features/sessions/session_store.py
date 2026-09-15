@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+from redis.exceptions import WatchError
+
 from app.core.redis_client import redis_client
 from app.features.sessions.schemas import Session
 
@@ -40,21 +42,6 @@ async def touch_session(user_id: int, session_id: str) -> None:
     await redis_client.set(key, session.model_dump_json(), keepttl=True)
 
 
-async def update_session_jti(
-    user_id: int,
-    session_id: str,
-    jti: str,
-) -> None:
-    key = f"session:{user_id}:{session_id}"
-    data = await redis_client.get(key)
-    if data is None:
-        return
-    session = Session.model_validate_json(data)
-    session.jti = jti
-
-    await redis_client.set(key, session.model_dump_json(), keepttl=True)
-
-
 async def get_all_sessions(user_id: int) -> list[Session]:
     pattern = f"session:{user_id}:*"
     sessions: list[Session] = []
@@ -69,3 +56,44 @@ async def get_all_sessions(user_id: int) -> list[Session]:
         sessions.append(session)
 
     return sessions
+
+
+async def update_session_jti(
+    user_id: int,
+    session_id: str,
+    expected_jti: str,
+    new_jti: str,
+) -> bool:
+    key = f"session:{user_id}:{session_id}"
+
+    async with redis_client.pipeline(transaction=True) as pipe:
+        try:
+            await pipe.watch(key)
+
+            data = await pipe.get(key)
+
+            if data is None:
+                await pipe.unwatch()
+                return False
+
+            session = Session.model_validate_json(data)
+
+            if session.jti != expected_jti:
+                await pipe.unwatch()
+                return False
+
+            session.jti = new_jti
+
+            pipe.multi()
+            pipe.set(
+                key,
+                session.model_dump_json(),
+                keepttl=True,
+            )
+
+            result = await pipe.execute()
+
+            return result is not None
+
+        except WatchError:
+            return False

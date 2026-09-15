@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timedelta
 
 import pytest
@@ -510,6 +511,53 @@ async def test_inactive_user_cannot_access_with_old_token(
 
 
 @pytest.mark.asyncio
+async def test_concurrent_refresh_with_same_token_only_one_succeeds(client):
+    user_data = {
+        "email": "concurrent-refresh@example.com",
+        "password": "StrongPassword123",
+    }
+
+    register_response = await client.post(
+        "/auth/register",
+        json=user_data,
+    )
+
+    assert register_response.status_code == 200
+
+    login_response = await client.post(
+        "/auth/login",
+        json=user_data,
+    )
+
+    assert login_response.status_code == 200
+
+    refresh_token = login_response.json()["refresh_token"]
+
+    start_event = asyncio.Event()
+
+    async def refresh():
+        await start_event.wait()
+
+        return await client.post(
+            "/auth/refresh",
+            json={
+                "refresh_token": refresh_token,
+            },
+        )
+
+    tasks = [asyncio.create_task(refresh()) for _ in range(10)]
+
+    start_event.set()
+
+    responses = await asyncio.gather(*tasks)
+
+    statuses = [response.status_code for response in responses]
+
+    assert statuses.count(200) == 1
+    assert statuses.count(401) == 9
+
+
+@pytest.mark.asyncio
 async def test_logout_success(client):
     user_data = {
         "email": "api-logout-success@example.com",
@@ -577,6 +625,56 @@ async def test_logout_revokes_refresh_token(client):
     assert logout_response.status_code == 200
     assert refresh_response.status_code == 401
     assert refresh_response.json()["detail"] == "Invalid session"
+
+
+@pytest.mark.asyncio
+async def test_revoke_session_revokes_access_token(client):
+    user_data = {
+        "email": "api-session-revoke-access@example.com",
+        "password": "StrongPassword123",
+    }
+
+    register_response = await client.post(
+        "/auth/register",
+        json=user_data,
+    )
+
+    login_response = await client.post(
+        "/auth/login",
+        json=user_data,
+    )
+
+    login_data = login_response.json()
+    access_token = login_data["access_token"]
+
+    sessions_response = await client.get(
+        "/sessions/",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+        },
+    )
+
+    session_id = sessions_response.json()[0]["session_id"]
+
+    revoke_response = await client.delete(
+        f"/sessions/{session_id}",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+        },
+    )
+
+    me_response = await client.get(
+        "/auth/me",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+        },
+    )
+
+    assert register_response.status_code == 200
+    assert login_response.status_code == 200
+    assert sessions_response.status_code == 200
+    assert revoke_response.status_code == 204
+    assert me_response.status_code == 401
 
 
 @pytest.mark.asyncio

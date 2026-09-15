@@ -15,6 +15,8 @@ from app.core.token_blacklist import is_token_blacklisted
 from app.database.session import get_db
 from app.features.auth.models import User
 from app.features.auth.repository import get_user_by_id
+from app.features.sessions.service import refresh_session_activity
+from app.features.sessions.session_validation import validate_session
 
 
 @dataclass
@@ -56,10 +58,14 @@ async def get_current_user(
         raise InvalidCredentials()
     if user_id is None:
         raise InvalidCredentials()
+    user_id = int(user_id)
+
+    await validate_session(user_id, session_id)
+    await refresh_session_activity(user_id, session_id)
 
     user = await get_user_by_id(
         db,
-        int(user_id),
+        user_id,
     )
 
     if user is None:
