@@ -299,7 +299,8 @@ async def test_refresh_token_not_found(client):
         data={
             "sub": "999",
             "session_id": "not-found-session",
-        }
+        },
+        jti="test-jti",
     )
     response = await client.post(
         "/auth/refresh",
@@ -308,7 +309,7 @@ async def test_refresh_token_not_found(client):
         },
     )
     assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid refresh token"
+    assert response.json()["detail"] == "Invalid session"
 
 
 @pytest.mark.asyncio
@@ -316,7 +317,8 @@ async def test_refresh_without_user_id(client):
     refresh_token = create_refresh_token(
         data={
             "session_id": "missing-user-id-session",
-        }
+        },
+        jti="test-jti",
     )
 
     response = await client.post(
@@ -334,7 +336,8 @@ async def test_refresh_without_session_id(client):
     refresh_token = create_refresh_token(
         data={
             "user_id": "1",
-        }
+        },
+        jti="test-jti",
     )
 
     response = await client.post(
@@ -393,7 +396,7 @@ async def test_refresh_token_reuse_after_rotation(client):
     )
 
     assert reuse_response.status_code == 401
-    assert reuse_response.json()["detail"] == "Invalid refresh token"
+    assert reuse_response.json()["detail"] == "Invalid token"
 
 
 @pytest.mark.asyncio
@@ -573,7 +576,7 @@ async def test_logout_revokes_refresh_token(client):
     assert login_response.status_code == 200
     assert logout_response.status_code == 200
     assert refresh_response.status_code == 401
-    assert refresh_response.json()["detail"] == "Invalid refresh token"
+    assert refresh_response.json()["detail"] == "Invalid session"
 
 
 @pytest.mark.asyncio
@@ -641,8 +644,8 @@ async def test_logout_all_revokes_all_sessions(client):
     assert refresh_response_1.status_code == 401
     assert refresh_response_2.status_code == 401
 
-    assert refresh_response_1.json()["detail"] == "Invalid refresh token"
-    assert refresh_response_2.json()["detail"] == "Invalid refresh token"
+    assert refresh_response_1.json()["detail"] == "Invalid session"
+    assert refresh_response_2.json()["detail"] == "Invalid session"
 
 
 @pytest.mark.asyncio

@@ -57,7 +57,7 @@ async def redis_client(monkeypatch) -> AsyncGenerator[Redis]:
     )
 
     monkeypatch.setattr(
-        "app.core.token_store.redis_client",
+        "app.features.sessions.session_store.redis_client",
         client,
     )
 
