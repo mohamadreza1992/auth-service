@@ -65,6 +65,10 @@ async def redis_client(monkeypatch) -> AsyncGenerator[Redis]:
         "app.core.token_blacklist.redis_client",
         client,
     )
+    monkeypatch.setattr(
+        "app.features.sessions.lock.redis_client",
+        client,
+    )
 
     try:
         yield client
