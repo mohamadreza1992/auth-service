@@ -146,37 +146,75 @@ async def test_delete_all_sessions_deletes_all_sessions(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_touch_session_does_nothing_when_session_not_found(monkeypatch):
-    mock_redis = AsyncMock()
+    mock_redis = Mock()
+    mock_pipeline = Mock()
+
     monkeypatch.setattr(session_store, "redis_client", mock_redis)
 
-    mock_redis.get.return_value = None
+    mock_redis.pipeline.return_value = mock_pipeline
+
+    mock_pipeline.__aenter__ = AsyncMock(return_value=mock_pipeline)
+    mock_pipeline.__aexit__ = AsyncMock(return_value=None)
+
+    mock_pipeline.watch = AsyncMock()
+    mock_pipeline.get = AsyncMock(return_value=None)
+    mock_pipeline.unwatch = AsyncMock()
 
     await touch_session(123, "session-1")
 
-    mock_redis.set.assert_not_awaited()
+    mock_pipeline.watch.assert_awaited_once_with(
+        "session:123:session-1",
+    )
+
+    mock_pipeline.get.assert_awaited_once_with(
+        "session:123:session-1",
+    )
+
+    mock_pipeline.unwatch.assert_awaited_once()
+
+    mock_pipeline.set.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_touch_session_updates_last_used_at(monkeypatch):
-    mock_redis = AsyncMock()
+    mock_redis = Mock()
+    mock_pipeline = Mock()
+
     monkeypatch.setattr(session_store, "redis_client", mock_redis)
+
+    mock_redis.pipeline.return_value = mock_pipeline
+
+    mock_pipeline.__aenter__ = AsyncMock(return_value=mock_pipeline)
+    mock_pipeline.__aexit__ = AsyncMock(return_value=None)
+
+    mock_pipeline.watch = AsyncMock()
+    mock_pipeline.get = AsyncMock()
+    mock_pipeline.execute = AsyncMock(return_value=[True])
 
     session = make_session()
     old_last_used_at = session.last_used_at
 
-    mock_redis.get.return_value = session.model_dump_json()
+    mock_pipeline.get.return_value = session.model_dump_json()
 
-    await touch_session(123, str(session.session_id))
+    await touch_session(
+        123,
+        str(session.session_id),
+    )
 
-    mock_redis.set.assert_awaited_once()
+    mock_pipeline.multi.assert_called_once()
 
-    args, kwargs = mock_redis.set.await_args
+    mock_pipeline.set.assert_called_once()
+
+    args, kwargs = mock_pipeline.set.call_args
+
     data = args[1]
 
     updated_session = Session.model_validate_json(data)
 
     assert updated_session.last_used_at > old_last_used_at
     assert kwargs == {"keepttl": True}
+
+    mock_pipeline.execute.assert_awaited_once()
 
 
 @pytest.mark.asyncio

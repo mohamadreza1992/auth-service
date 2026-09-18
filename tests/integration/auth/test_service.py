@@ -1,4 +1,6 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -6,6 +8,7 @@ from fastapi import HTTPException
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import UserAlreadyExists
 from app.core.security import (
     create_refresh_token,
     decode_refresh_token,
@@ -22,7 +25,10 @@ from app.features.auth.service import (
     register_user,
 )
 from app.features.sessions.schemas import Session
-from app.features.sessions.service import create_session
+from app.features.sessions.service import (
+    create_session,
+    delete_all_sessions,
+)
 from app.features.sessions.session_store import get_session
 
 
@@ -173,7 +179,7 @@ async def test_login_user_wrong_password(
 
 
 @pytest.mark.asyncio
-async def test_refresh_access_token_without_user_id():
+async def test_refresh_access_token_without_user_id(db_session: AsyncSession):
     refresh_token = create_refresh_token(
         data={
             "email": "test@example.com",
@@ -187,14 +193,14 @@ async def test_refresh_access_token_without_user_id():
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await refresh_access_token(data)
+        await refresh_access_token(db_session, data)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid refresh token"
 
 
 @pytest.mark.asyncio
-async def test_refresh_access_token_without_session_id():
+async def test_refresh_access_token_without_session_id(db_session: AsyncSession):
     refresh_token = create_refresh_token(
         data={
             "sub": "1",
@@ -208,7 +214,7 @@ async def test_refresh_access_token_without_session_id():
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await refresh_access_token(data)
+        await refresh_access_token(db_session, data)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid refresh token"
@@ -217,11 +223,22 @@ async def test_refresh_access_token_without_session_id():
 @pytest.mark.asyncio
 async def test_refresh_access_token_token_not_found(
     redis_client: Redis,
+    db_session: AsyncSession,
 ):
+    user = User(
+        email="test@example.com",
+        password_hash=hash_password("StrongPassword123"),
+        is_active=True,
+    )
+
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
     refresh_token = create_refresh_token(
         data={
-            "sub": "1",
-            "email": "test@example.com",
+            "sub": str(user.id),
+            "email": user.email,
             "session_id": "not-found-session-001",
         },
         jti=str(uuid4()),
@@ -232,7 +249,7 @@ async def test_refresh_access_token_token_not_found(
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await refresh_access_token(data)
+        await refresh_access_token(db_session, data)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid session"
@@ -241,19 +258,30 @@ async def test_refresh_access_token_token_not_found(
 @pytest.mark.asyncio
 async def test_refresh_access_token_token_mismatch(
     redis_client: Redis,
+    db_session: AsyncSession,
 ):
+    user = User(
+        email="test@example.com",
+        password_hash=hash_password("StrongPassword123"),
+        is_active=True,
+    )
+
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
     correct_jti = str(uuid4())
     wrong_jti = str(uuid4())
 
     session = await create_test_session(
-        user_id=1,
+        user_id=user.id,
         jti=correct_jti,
     )
 
     wrong_token = create_refresh_token(
         data={
-            "sub": "1",
-            "email": "test@example.com",
+            "sub": str(user.id),
+            "email": user.email,
             "session_id": str(session.session_id),
         },
         jti=wrong_jti,
@@ -265,7 +293,7 @@ async def test_refresh_access_token_token_mismatch(
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await refresh_access_token(data)
+        await refresh_access_token(db_session, data)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid token"
@@ -274,17 +302,28 @@ async def test_refresh_access_token_token_mismatch(
 @pytest.mark.asyncio
 async def test_successful_refresh_access_token(
     redis_client: Redis,
+    db_session: AsyncSession,
 ):
+    user = User(
+        email="test@example.com",
+        password_hash=hash_password("StrongPassword123"),
+        is_active=True,
+    )
+
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
     old_jti = str(uuid4())
 
     session = await create_test_session(
-        user_id=1,
+        user_id=user.id,
         jti=old_jti,
     )
 
     refresh_token = create_refresh_token(
         data={
-            "sub": "1",
+            "sub": str(user.id),
             "email": "test@example.com",
             "session_id": str(session.session_id),
         },
@@ -295,7 +334,7 @@ async def test_successful_refresh_access_token(
         refresh_token=refresh_token,
     )
 
-    result = await refresh_access_token(data)
+    result = await refresh_access_token(db_session, data)
 
     assert result.access_token
     assert result.refresh_token
@@ -306,11 +345,11 @@ async def test_successful_refresh_access_token(
     )
 
     assert new_payload["session_id"] == str(session.session_id)
-    assert new_payload["sub"] == "1"
+    assert new_payload["sub"] == str(user.id)
     assert new_payload["jti"] != old_jti
 
     updated_session = await get_session(
-        1,
+        user.id,
         str(session.session_id),
     )
 
@@ -465,3 +504,261 @@ async def test_logout_all_users(
         )
         is not None
     )
+
+
+@pytest.mark.asyncio
+async def test_register_user_rejects_email_with_different_case(
+    db_session,
+):
+    first_user = UserCreate(
+        email="Test@Example.com",
+        password="password123",
+    )
+
+    created_user = await register_user(
+        db_session,
+        first_user,
+    )
+
+    assert created_user.email == "test@example.com"
+
+    second_user = UserCreate(
+        email="test@example.com",
+        password="password123",
+    )
+
+    with pytest.raises(UserAlreadyExists):
+        await register_user(
+            db_session,
+            second_user,
+        )
+
+
+@pytest.mark.asyncio
+async def test_login_user_accepts_email_with_different_case(db_session, redis_client):
+    user_data = UserCreate(
+        email="Test@Example.com",
+        password="password123",
+    )
+
+    await register_user(
+        db_session,
+        user_data,
+    )
+
+    login_data = UserLogin(
+        email="TEST@EXAMPLE.COM",
+        password="password123",
+    )
+
+    token = await login_user(
+        db_session,
+        login_data,
+    )
+
+    assert token is not None
+
+
+@pytest.mark.asyncio
+async def test_register_user_handles_integrity_error(
+    db_session: AsyncSession,
+):
+    existing_user = User(
+        email="race@example.com",
+        password_hash="hashed_password",
+        is_active=True,
+    )
+    db_session.add(existing_user)
+    await db_session.commit()
+
+    user_data = UserCreate(
+        email="race@example.com",
+        password="StrongPassword123",
+    )
+
+    with patch(
+        "app.features.auth.service.get_user_by_email",
+        new=AsyncMock(return_value=None),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await register_user(db_session, user_data)
+
+    assert exc_info.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_register_user_rolls_back_after_integrity_error(
+    db_session: AsyncSession,
+):
+    existing_user = User(
+        email="rollback@example.com",
+        password_hash="hashed_password",
+        is_active=True,
+    )
+    db_session.add(existing_user)
+    await db_session.commit()
+
+    user_data = UserCreate(
+        email="rollback@example.com",
+        password="StrongPassword123",
+    )
+
+    with patch(
+        "app.features.auth.service.get_user_by_email",
+        new=AsyncMock(return_value=None),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await register_user(db_session, user_data)
+
+    assert exc_info.value.status_code == 409
+
+    new_user = User(
+        email="after-error@example.com",
+        password_hash="hashed_password",
+        is_active=True,
+    )
+    db_session.add(new_user)
+    await db_session.commit()
+
+    assert new_user.id is not None
+
+
+@pytest.mark.asyncio
+async def test_refresh_access_token_with_malformed_user_id(db_session: AsyncSession):
+    refresh_token = create_refresh_token(
+        data={
+            "sub": "not-an-integer",
+            "email": "test@example.com",
+            "session_id": "test-session",
+        },
+        jti=str(uuid4()),
+    )
+
+    data = RefreshTokenRequest(
+        refresh_token=refresh_token,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await refresh_access_token(db_session, data)
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Invalid refresh token"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_refresh_access_token_allows_only_one_refresh(
+    redis_client: Redis,
+    db_session: AsyncSession,
+):
+    user = User(
+        email="test@example.com",
+        password_hash=hash_password("StrongPassword123"),
+        is_active=True,
+    )
+
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    old_jti = str(uuid4())
+
+    session = await create_test_session(
+        user_id=user.id,
+        jti=old_jti,
+    )
+
+    refresh_token = create_refresh_token(
+        data={
+            "sub": str(user.id),
+            "email": user.email,
+            "session_id": str(session.session_id),
+        },
+        jti=old_jti,
+    )
+
+    data = RefreshTokenRequest(
+        refresh_token=refresh_token,
+    )
+
+    results = await asyncio.gather(
+        refresh_access_token(db_session, data),
+        refresh_access_token(db_session, data),
+        return_exceptions=True,
+    )
+
+    successful = [result for result in results if not isinstance(result, Exception)]
+
+    failed = [result for result in results if isinstance(result, HTTPException)]
+
+    assert len(successful) == 1
+    assert len(failed) == 1
+    assert failed[0].status_code == 401
+    assert failed[0].detail == "Invalid token"
+
+
+@pytest.mark.asyncio
+async def test_logout_all_can_delete_session_created_during_logout_all(
+    redis_client: Redis,
+    monkeypatch,
+):
+    user_id = 1
+
+    old_session = await create_test_session(
+        user_id=user_id,
+        jti=str(uuid4()),
+    )
+
+    scan_started = asyncio.Event()
+    login_completed = asyncio.Event()
+
+    old_key = f"session:{user_id}:{old_session.session_id}"
+
+    new_session = None
+    new_key = None
+
+    async def controlled_scan_iter(match):
+        assert match == f"session:{user_id}:*"
+
+        yield old_key
+
+        scan_started.set()
+        await login_completed.wait()
+
+        yield new_key
+
+    async def login():
+        nonlocal new_session, new_key
+
+        new_session = await create_session(
+            user_id=user_id,
+            jti=str(uuid4()),
+            device=None,
+            ip_address=None,
+            expire_seconds=60,
+        )
+
+        new_key = f"session:{user_id}:{new_session.session_id}"
+        login_completed.set()
+
+    monkeypatch.setattr(
+        "app.features.sessions.session_store.redis_client.scan_iter",
+        controlled_scan_iter,
+    )
+
+    logout_task = asyncio.create_task(
+        delete_all_sessions(user_id),
+    )
+
+    await scan_started.wait()
+
+    await login()
+    await logout_task
+
+    assert new_session is not None
+
+    remaining_session = await get_session(
+        user_id,
+        str(new_session.session_id),
+    )
+
+    assert remaining_session is None

@@ -2,6 +2,7 @@ import asyncio
 from datetime import timedelta
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, create_refresh_token, hash_password
 from app.features.auth.models import User
@@ -295,20 +296,35 @@ async def test_refresh_success(client):
 
 
 @pytest.mark.asyncio
-async def test_refresh_token_not_found(client):
+async def test_refresh_token_not_found(
+    client,
+    db_session: AsyncSession,
+):
+    user = User(
+        email="test@example.com",
+        password_hash=hash_password("StrongPassword123"),
+        is_active=True,
+    )
+
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
     refresh_token = create_refresh_token(
         data={
-            "sub": "999",
+            "sub": str(user.id),
             "session_id": "not-found-session",
         },
         jti="test-jti",
     )
+
     response = await client.post(
         "/auth/refresh",
         json={
             "refresh_token": refresh_token,
         },
     )
+
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid session"
 

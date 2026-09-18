@@ -47,3 +47,11 @@ class InvalidSession(HTTPException):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid session",
         )
+
+
+class SessionOperationInProgress(HTTPException):
+    def __init__(self):
+        super().__init__(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Session operation is already in progress",
+        )

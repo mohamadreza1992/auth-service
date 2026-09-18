@@ -33,13 +33,31 @@ async def delete_all_sessions(user_id: int) -> None:
 
 async def touch_session(user_id: int, session_id: str) -> None:
     key = f"session:{user_id}:{session_id}"
-    data = await redis_client.get(key)
-    if data is None:
-        return
-    session = Session.model_validate_json(data)
-    session.last_used_at = datetime.now(UTC)
 
-    await redis_client.set(key, session.model_dump_json(), keepttl=True)
+    async with redis_client.pipeline(transaction=True) as pipe:
+        try:
+            await pipe.watch(key)
+
+            data = await pipe.get(key)
+
+            if data is None:
+                await pipe.unwatch()
+                return
+
+            session = Session.model_validate_json(data)
+            session.last_used_at = datetime.now(UTC)
+
+            pipe.multi()
+            pipe.set(
+                key,
+                session.model_dump_json(),
+                keepttl=True,
+            )
+
+            await pipe.execute()
+
+        except WatchError:
+            return
 
 
 async def get_all_sessions(user_id: int) -> list[Session]:

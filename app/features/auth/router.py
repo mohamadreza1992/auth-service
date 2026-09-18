@@ -69,8 +69,8 @@ async def logout(
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh(data: RefreshTokenRequest):
-    return await refresh_access_token(data)
+async def refresh(data: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
+    return await refresh_access_token(db, data)
 
 
 @router.post("/logout-all")
