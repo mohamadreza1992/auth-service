@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.exceptions import (
     InvalidCredentials,
     InvalidRefreshToken,
+    InvalidToken,
     SessionOperationInProgress,
     UserAlreadyExists,
 )
@@ -21,7 +22,11 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.core.token_blacklist import blacklist_token
+from app.core.token_blacklist import (
+    blacklist_token,
+    get_refresh_token_rotation_time,
+    mark_refresh_token_rotated,
+)
 from app.features.auth.models import User
 from app.features.auth.repository import create_user, get_user_by_email, get_user_by_id
 from app.features.auth.schemas import RefreshTokenRequest, Token, UserCreate, UserLogin
@@ -37,7 +42,6 @@ from app.features.sessions.service import (
 )
 from app.features.sessions.session_validation import (
     validate_session,
-    validate_session_jti,
 )
 
 logger = get_logger(__name__)
@@ -140,7 +144,12 @@ async def login_user(
         )
 
 
-async def refresh_access_token(db: AsyncSession, data: RefreshTokenRequest):
+async def refresh_access_token(
+    db: AsyncSession,
+    data: RefreshTokenRequest,
+):
+    request_started_at = datetime.now(UTC).timestamp()
+
     try:
         payload = decode_refresh_token(data.refresh_token)
     except JWTError:
@@ -149,6 +158,7 @@ async def refresh_access_token(db: AsyncSession, data: RefreshTokenRequest):
     user_id = payload.get("sub")
     session_id = payload.get("session_id")
     jti = payload.get("jti")
+    exp = payload.get("exp")
 
     if user_id is None:
         raise InvalidRefreshToken()
@@ -158,20 +168,41 @@ async def refresh_access_token(db: AsyncSession, data: RefreshTokenRequest):
 
     if not isinstance(jti, str) or not jti:
         raise InvalidRefreshToken()
+
+    if not isinstance(exp, int):
+        raise InvalidRefreshToken()
+
     try:
         user_id = int(user_id)
     except (TypeError, ValueError):
         raise InvalidRefreshToken() from None
-    user = await get_user_by_id(db, user_id)
+
+    user = await get_user_by_id(
+        db,
+        user_id,
+    )
 
     if user is None:
         raise InvalidRefreshToken()
+
     if not user.is_active:
         raise InvalidRefreshToken()
 
-    session = await validate_session(user_id, session_id)
+    session = await validate_session(
+        user_id,
+        session_id,
+    )
 
-    await validate_session_jti(session, jti)
+    if session.jti != jti:
+        rotation_time = await get_refresh_token_rotation_time(jti)
+
+        if rotation_time is not None and request_started_at > rotation_time:
+            await revoke_session(
+                user_id,
+                session_id,
+            )
+
+        raise InvalidToken()
 
     access_token = create_access_token(
         data={
@@ -179,7 +210,9 @@ async def refresh_access_token(db: AsyncSession, data: RefreshTokenRequest):
             "session_id": session_id,
         }
     )
+
     new_jti = str(uuid.uuid4())
+
     new_refresh_token = create_refresh_token(
         data={
             "sub": str(user_id),
@@ -197,6 +230,19 @@ async def refresh_access_token(db: AsyncSession, data: RefreshTokenRequest):
 
     if not updated:
         raise InvalidRefreshToken()
+
+    remaining_time = exp - int(datetime.now(UTC).timestamp())
+
+    if remaining_time > 0:
+        await blacklist_token(
+            jti,
+            remaining_time,
+        )
+
+        await mark_refresh_token_rotated(
+            jti,
+            remaining_time,
+        )
 
     return Token(
         access_token=access_token,

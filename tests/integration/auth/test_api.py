@@ -956,3 +956,65 @@ async def test_refresh_token_with_invalid_session_id(client):
     )
 
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_concurrent_refresh_does_not_revoke_session(client):
+    user_data = {
+        "email": "concurrent-refresh-session@example.com",
+        "password": "StrongPassword123",
+    }
+
+    register_response = await client.post(
+        "/auth/register",
+        json=user_data,
+    )
+
+    assert register_response.status_code == 200
+
+    login_response = await client.post(
+        "/auth/login",
+        json=user_data,
+    )
+
+    assert login_response.status_code == 200
+
+    refresh_token = login_response.json()["refresh_token"]
+
+    start_event = asyncio.Event()
+
+    async def refresh():
+        await start_event.wait()
+
+        return await client.post(
+            "/auth/refresh",
+            json={
+                "refresh_token": refresh_token,
+            },
+        )
+
+    tasks = [asyncio.create_task(refresh()) for _ in range(10)]
+
+    start_event.set()
+
+    responses = await asyncio.gather(*tasks)
+
+    statuses = [response.status_code for response in responses]
+
+    assert statuses.count(200) == 1
+    assert statuses.count(401) == 9
+
+    successful_response = next(
+        response for response in responses if response.status_code == 200
+    )
+
+    access_token = successful_response.json()["access_token"]
+
+    me_response = await client.get(
+        "/auth/me",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+        },
+    )
+
+    assert me_response.status_code == 200
