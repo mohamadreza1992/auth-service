@@ -112,6 +112,8 @@ async def test_revoke_session(monkeypatch):
 @pytest.mark.asyncio
 async def test_revoke_all_sessions(monkeypatch):
     delete_all_mock = AsyncMock()
+    acquire_mock = AsyncMock(return_value="lock-token")
+    release_mock = AsyncMock(return_value=True)
 
     monkeypatch.setattr(
         service,
@@ -119,9 +121,28 @@ async def test_revoke_all_sessions(monkeypatch):
         delete_all_mock,
     )
 
+    monkeypatch.setattr(
+        service,
+        "acquire_session_lock",
+        acquire_mock,
+    )
+
+    monkeypatch.setattr(
+        service,
+        "release_session_lock",
+        release_mock,
+    )
+
     await service.revoke_all_sessions(123)
 
+    acquire_mock.assert_awaited_once_with(123)
+
     delete_all_mock.assert_awaited_once_with(123)
+
+    release_mock.assert_awaited_once_with(
+        123,
+        "lock-token",
+    )
 
 
 @pytest.mark.asyncio

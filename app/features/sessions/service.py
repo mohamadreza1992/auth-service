@@ -3,6 +3,11 @@ from uuid import uuid4
 
 from pydantic import IPvAnyAddress
 
+from app.core.exceptions import SessionOperationInProgress
+from app.features.sessions.lock import (
+    acquire_session_lock,
+    release_session_lock,
+)
 from app.features.sessions.schemas import Session, SessionResponse
 from app.features.sessions.session_store import (
     delete_all_sessions,
@@ -58,7 +63,18 @@ async def revoke_session(user_id: int, session_id: str):
 
 
 async def revoke_all_sessions(user_id: int):
-    await delete_all_sessions(user_id)
+    lock_token = await acquire_session_lock(user_id)
+
+    if lock_token is None:
+        raise SessionOperationInProgress()
+
+    try:
+        await delete_all_sessions(user_id)
+    finally:
+        await release_session_lock(
+            user_id,
+            lock_token,
+        )
 
 
 async def refresh_session_activity(user_id: int, session_id: str):

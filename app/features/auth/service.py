@@ -230,19 +230,8 @@ async def logout_user(user_id: int, session_id: str, token_jti: str, token_exp: 
 
 
 async def logout_all_users(user_id: int):
-    lock_token = await acquire_session_lock(user_id)
+    await revoke_all_sessions(user_id)
 
-    if lock_token is None:
-        raise SessionOperationInProgress()
-
-    try:
-        await revoke_all_sessions(user_id)
-
-        return {
-            "message": "Successfully logged out from all devices",
-        }
-    finally:
-        await release_session_lock(
-            user_id,
-            lock_token,
-        )
+    return {
+        "message": "Successfully logged out from all devices",
+    }
