@@ -14,6 +14,7 @@ from app.core.exceptions import (
 )
 from app.core.logging import get_logger
 from app.core.security import (
+    DUMMY_PASSWORD_HASH,
     create_access_token,
     create_refresh_token,
     decode_refresh_token,
@@ -79,13 +80,16 @@ async def login_user(
         db,
         user_data.email,
     )
-    if not user:
-        raise InvalidCredentials()
+
+    password_hash_to_verify = user.password_hash if user else DUMMY_PASSWORD_HASH
 
     if not verify_password(
         user_data.password,
-        user.password_hash,
+        password_hash_to_verify,
     ):
+        raise InvalidCredentials()
+
+    if not user:
         raise InvalidCredentials()
 
     if not user.is_active:
@@ -160,6 +164,8 @@ async def refresh_access_token(db: AsyncSession, data: RefreshTokenRequest):
     user = await get_user_by_id(db, user_id)
 
     if user is None:
+        raise InvalidRefreshToken()
+    if not user.is_active:
         raise InvalidRefreshToken()
 
     session = await validate_session(user_id, session_id)

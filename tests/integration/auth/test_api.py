@@ -817,3 +817,44 @@ async def test_me_without_access_token(client):
     )
 
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_inactive_user_cannot_refresh(
+    client,
+    db_session,
+):
+    user = User(
+        email="inactive-refresh@example.com",
+        password_hash=hash_password("password123"),
+        is_active=True,
+    )
+
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    login_response = await client.post(
+        "/auth/login",
+        json={
+            "email": "inactive-refresh@example.com",
+            "password": "password123",
+        },
+    )
+
+    assert login_response.status_code == 200
+
+    refresh_token = login_response.json()["refresh_token"]
+
+    user.is_active = False
+    await db_session.commit()
+
+    response = await client.post(
+        "/auth/refresh",
+        json={
+            "refresh_token": refresh_token,
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid refresh token"

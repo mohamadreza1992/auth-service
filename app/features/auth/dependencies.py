@@ -48,6 +48,7 @@ async def get_current_user(
 
     if exp is None:
         raise InvalidToken()
+
     if jti is None:
         raise InvalidToken()
 
@@ -56,9 +57,14 @@ async def get_current_user(
 
     if session_id is None:
         raise InvalidCredentials()
+
     if user_id is None:
         raise InvalidCredentials()
-    user_id = int(user_id)
+
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        raise InvalidCredentials() from None
 
     await validate_session(user_id, session_id)
     await refresh_session_activity(user_id, session_id)
@@ -70,7 +76,13 @@ async def get_current_user(
 
     if user is None:
         raise InvalidCredentials()
+
     if not user.is_active:
         raise InvalidCredentials()
 
-    return AuthContext(user=user, session_id=session_id, token_jti=jti, token_exp=exp)
+    return AuthContext(
+        user=user,
+        session_id=session_id,
+        token_jti=jti,
+        token_exp=exp,
+    )
