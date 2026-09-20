@@ -1,9 +1,11 @@
 import asyncio
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
+from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.security import create_access_token, create_refresh_token, hash_password
 from app.features.auth.models import User
 
@@ -858,3 +860,99 @@ async def test_inactive_user_cannot_refresh(
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid refresh token"
+
+
+@pytest.mark.asyncio
+async def test_me_access_token_with_invalid_jti(client):
+    access_token = jwt.encode(
+        {
+            "sub": "1",
+            "session_id": "invalid-jti-session",
+            "jti": 12345,
+            "exp": datetime.now(UTC) + timedelta(minutes=5),
+            "type": "access",
+        },
+        settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+    )
+
+    response = await client.get(
+        "/auth/me",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_me_access_token_with_invalid_session_id(client):
+    access_token = jwt.encode(
+        {
+            "sub": "1",
+            "session_id": 12345,
+            "jti": "valid-jti",
+            "exp": datetime.now(UTC) + timedelta(minutes=5),
+            "type": "access",
+        },
+        settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+    )
+
+    response = await client.get(
+        "/auth/me",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_with_invalid_jti(client):
+    refresh_token = jwt.encode(
+        {
+            "sub": "1",
+            "session_id": "invalid-jti-session",
+            "jti": 12345,
+            "exp": datetime.now(UTC) + timedelta(days=1),
+            "type": "refresh",
+        },
+        settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+    )
+
+    response = await client.post(
+        "/auth/refresh",
+        json={
+            "refresh_token": refresh_token,
+        },
+    )
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_with_invalid_session_id(client):
+    refresh_token = jwt.encode(
+        {
+            "sub": "1",
+            "session_id": 12345,
+            "jti": "valid-jti",
+            "exp": datetime.now(UTC) + timedelta(days=1),
+            "type": "refresh",
+        },
+        settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+    )
+
+    response = await client.post(
+        "/auth/refresh",
+        json={
+            "refresh_token": refresh_token,
+        },
+    )
+
+    assert response.status_code == 401

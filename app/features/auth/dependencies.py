@@ -49,13 +49,22 @@ async def get_current_user(
     if exp is None:
         raise InvalidToken()
 
+    if not isinstance(exp, int):
+        raise InvalidToken()
+
     if jti is None:
+        raise InvalidToken()
+
+    if not isinstance(jti, str) or not jti:
         raise InvalidToken()
 
     if await is_token_blacklisted(jti):
         raise RevokedToken()
 
     if session_id is None:
+        raise InvalidCredentials()
+
+    if not isinstance(session_id, str) or not session_id:
         raise InvalidCredentials()
 
     if user_id is None:

@@ -152,10 +152,11 @@ async def refresh_access_token(db: AsyncSession, data: RefreshTokenRequest):
 
     if user_id is None:
         raise InvalidRefreshToken()
-    if session_id is None:
+
+    if not isinstance(session_id, str) or not session_id:
         raise InvalidRefreshToken()
 
-    if jti is None:
+    if not isinstance(jti, str) or not jti:
         raise InvalidRefreshToken()
     try:
         user_id = int(user_id)
