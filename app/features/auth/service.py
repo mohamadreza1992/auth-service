@@ -234,11 +234,6 @@ async def refresh_access_token(
     remaining_time = exp - int(datetime.now(UTC).timestamp())
 
     if remaining_time > 0:
-        await blacklist_token(
-            jti,
-            remaining_time,
-        )
-
         await mark_refresh_token_rotated(
             jti,
             remaining_time,

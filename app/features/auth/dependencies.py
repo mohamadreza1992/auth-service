@@ -75,7 +75,6 @@ async def get_current_user(
     except (TypeError, ValueError):
         raise InvalidCredentials() from None
 
-    await validate_session(user_id, session_id)
     await refresh_session_activity(user_id, session_id)
     await validate_session(user_id, session_id)
 
