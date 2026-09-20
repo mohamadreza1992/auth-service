@@ -1,5 +1,6 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
@@ -8,8 +9,9 @@ from fastapi import HTTPException
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import UserAlreadyExists
+from app.core.exceptions import InvalidCredentials, UserAlreadyExists
 from app.core.security import (
+    DUMMY_PASSWORD_HASH,
     create_refresh_token,
     decode_refresh_token,
     hash_password,
@@ -762,3 +764,79 @@ async def test_logout_all_can_delete_session_created_during_logout_all(
     )
 
     assert remaining_session is None
+
+
+@pytest.mark.asyncio
+async def test_login_with_nonexistent_email_verifies_dummy_password_hash(
+    db_session,
+    monkeypatch,
+):
+    verify_called = False
+
+    async def fake_get_user_by_email(db, email):
+        return None
+
+    def fake_verify_password(password, password_hash):
+        nonlocal verify_called
+
+        verify_called = True
+
+        assert password_hash == DUMMY_PASSWORD_HASH
+
+        return False
+
+    monkeypatch.setattr(
+        "app.features.auth.service.get_user_by_email",
+        fake_get_user_by_email,
+    )
+    monkeypatch.setattr(
+        "app.features.auth.service.verify_password",
+        fake_verify_password,
+    )
+
+    user_data = UserLogin(
+        email="nonexistent@example.com",
+        password="wrong-password",
+    )
+
+    with pytest.raises(InvalidCredentials):
+        await login_user(db_session, user_data)
+
+    assert verify_called is True
+
+
+@pytest.mark.asyncio
+async def test_login_with_existing_user_verifies_real_password_hash(
+    db_session,
+    monkeypatch,
+):
+    password_hash = "real-password-hash"
+    user = SimpleNamespace(
+        password_hash=password_hash,
+        is_active=True,
+        id=123,
+    )
+
+    async def fake_get_user_by_email(db, email):
+        return user
+
+    def fake_verify_password(password, hashed_password):
+        assert hashed_password == password_hash
+        return False
+
+    monkeypatch.setattr(
+        "app.features.auth.service.get_user_by_email",
+        fake_get_user_by_email,
+    )
+    monkeypatch.setattr(
+        "app.features.auth.service.verify_password",
+        fake_verify_password,
+    )
+
+    user_data = UserLogin(
+        email="existing@example.com",
+        password="wrong-password",
+    )
+
+    with pytest.raises(InvalidCredentials):
+        await login_user(db_session, user_data)

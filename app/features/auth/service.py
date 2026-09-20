@@ -9,18 +9,24 @@ from app.core.config import settings
 from app.core.exceptions import (
     InvalidCredentials,
     InvalidRefreshToken,
+    InvalidToken,
     SessionOperationInProgress,
     UserAlreadyExists,
 )
 from app.core.logging import get_logger
 from app.core.security import (
+    DUMMY_PASSWORD_HASH,
     create_access_token,
     create_refresh_token,
     decode_refresh_token,
     hash_password,
     verify_password,
 )
-from app.core.token_blacklist import blacklist_token
+from app.core.token_blacklist import (
+    blacklist_token,
+    get_refresh_token_rotation_time,
+    mark_refresh_token_rotated,
+)
 from app.features.auth.models import User
 from app.features.auth.repository import create_user, get_user_by_email, get_user_by_id
 from app.features.auth.schemas import RefreshTokenRequest, Token, UserCreate, UserLogin
@@ -36,7 +42,6 @@ from app.features.sessions.service import (
 )
 from app.features.sessions.session_validation import (
     validate_session,
-    validate_session_jti,
 )
 
 logger = get_logger(__name__)
@@ -79,13 +84,16 @@ async def login_user(
         db,
         user_data.email,
     )
-    if not user:
-        raise InvalidCredentials()
+
+    password_hash_to_verify = user.password_hash if user else DUMMY_PASSWORD_HASH
 
     if not verify_password(
         user_data.password,
-        user.password_hash,
+        password_hash_to_verify,
     ):
+        raise InvalidCredentials()
+
+    if not user:
         raise InvalidCredentials()
 
     if not user.is_active:
@@ -136,7 +144,12 @@ async def login_user(
         )
 
 
-async def refresh_access_token(db: AsyncSession, data: RefreshTokenRequest):
+async def refresh_access_token(
+    db: AsyncSession,
+    data: RefreshTokenRequest,
+):
+    request_started_at = datetime.now(UTC).timestamp()
+
     try:
         payload = decode_refresh_token(data.refresh_token)
     except JWTError:
@@ -145,26 +158,51 @@ async def refresh_access_token(db: AsyncSession, data: RefreshTokenRequest):
     user_id = payload.get("sub")
     session_id = payload.get("session_id")
     jti = payload.get("jti")
+    exp = payload.get("exp")
 
     if user_id is None:
         raise InvalidRefreshToken()
-    if session_id is None:
+
+    if not isinstance(session_id, str) or not session_id:
         raise InvalidRefreshToken()
 
-    if jti is None:
+    if not isinstance(jti, str) or not jti:
         raise InvalidRefreshToken()
+
+    if not isinstance(exp, int):
+        raise InvalidRefreshToken()
+
     try:
         user_id = int(user_id)
     except (TypeError, ValueError):
         raise InvalidRefreshToken() from None
-    user = await get_user_by_id(db, user_id)
+
+    user = await get_user_by_id(
+        db,
+        user_id,
+    )
 
     if user is None:
         raise InvalidRefreshToken()
 
-    session = await validate_session(user_id, session_id)
+    if not user.is_active:
+        raise InvalidRefreshToken()
 
-    await validate_session_jti(session, jti)
+    session = await validate_session(
+        user_id,
+        session_id,
+    )
+
+    if session.jti != jti:
+        rotation_time = await get_refresh_token_rotation_time(jti)
+
+        if rotation_time is not None and request_started_at > rotation_time:
+            await revoke_session(
+                user_id,
+                session_id,
+            )
+
+        raise InvalidToken()
 
     access_token = create_access_token(
         data={
@@ -172,7 +210,9 @@ async def refresh_access_token(db: AsyncSession, data: RefreshTokenRequest):
             "session_id": session_id,
         }
     )
+
     new_jti = str(uuid.uuid4())
+
     new_refresh_token = create_refresh_token(
         data={
             "sub": str(user_id),
@@ -190,6 +230,19 @@ async def refresh_access_token(db: AsyncSession, data: RefreshTokenRequest):
 
     if not updated:
         raise InvalidRefreshToken()
+
+    remaining_time = exp - int(datetime.now(UTC).timestamp())
+
+    if remaining_time > 0:
+        await blacklist_token(
+            jti,
+            remaining_time,
+        )
+
+        await mark_refresh_token_rotated(
+            jti,
+            remaining_time,
+        )
 
     return Token(
         access_token=access_token,
@@ -223,19 +276,8 @@ async def logout_user(user_id: int, session_id: str, token_jti: str, token_exp: 
 
 
 async def logout_all_users(user_id: int):
-    lock_token = await acquire_session_lock(user_id)
+    await revoke_all_sessions(user_id)
 
-    if lock_token is None:
-        raise SessionOperationInProgress()
-
-    try:
-        await revoke_all_sessions(user_id)
-
-        return {
-            "message": "Successfully logged out from all devices",
-        }
-    finally:
-        await release_session_lock(
-            user_id,
-            lock_token,
-        )
+    return {
+        "message": "Successfully logged out from all devices",
+    }
