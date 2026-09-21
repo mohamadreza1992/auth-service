@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 from app.core.config import settings
 from app.database.base import Base
-from app.features.auth import models  # noqa: F401
+from app.features.auth import models as auth_models  # noqa: F401
+from app.features.users import models as users_models  # noqa: F401
 
 config = context.config
 
