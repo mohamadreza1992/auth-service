@@ -55,3 +55,11 @@ class SessionOperationInProgress(HTTPException):
             status_code=status.HTTP_409_CONFLICT,
             detail="Session operation is already in progress",
         )
+
+
+class ProfileNotFound(HTTPException):
+    def __init__(self):
+        super().__init__(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="profile not found",
+        )

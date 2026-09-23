@@ -35,7 +35,7 @@ oauth2_scheme = OAuth2PasswordBearer(
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
-):
+) -> AuthContext:
     try:
         payload = decode_access_token(token)
     except JWTError:
