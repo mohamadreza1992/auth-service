@@ -12,3 +12,15 @@ class UserProfileResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class ProfileUpdate(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    avatar_url: str | None = None
+
+
+class ProfileReplace(BaseModel):
+    first_name: str
+    last_name: str
+    avatar_url: str

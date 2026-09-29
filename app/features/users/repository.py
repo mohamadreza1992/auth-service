@@ -11,6 +11,7 @@ class UserProfileRepository(Protocol):
         self,
         user_id: int,
     ) -> UserProfile | None: ...
+    async def update(self, user_id: int, data: dict) -> UserProfile | None: ...
 
 
 class SQLAlchemyUserProfileRepository:
@@ -23,3 +24,27 @@ class SQLAlchemyUserProfileRepository:
         )
 
         return result.scalar_one_or_none()
+
+    async def update(
+        self,
+        user_id: int,
+        data: dict[str, str | None],
+    ) -> UserProfile | None:
+        profile = await self.get_by_user_id(user_id)
+
+        if profile is None:
+            return None
+
+        if "first_name" in data:
+            profile.first_name = data["first_name"]
+
+        if "last_name" in data:
+            profile.last_name = data["last_name"]
+
+        if "avatar_url" in data:
+            profile.avatar_url = data["avatar_url"]
+
+        await self.db.commit()
+        await self.db.refresh(profile)
+
+        return profile
