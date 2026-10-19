@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import InvalidCredentials, UserAlreadyExists
+from app.core.exceptions import InvalidCredentials, PasswordTooShort, UserAlreadyExists
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
     create_refresh_token,
@@ -18,6 +18,7 @@ from app.core.security import (
 )
 from app.core.token_blacklist import is_token_blacklisted
 from app.features.auth.models import User
+from app.features.auth.repository import get_user_by_email
 from app.features.auth.schemas import RefreshTokenRequest, UserCreate, UserLogin
 from app.features.auth.service import (
     login_user,
@@ -514,7 +515,7 @@ async def test_register_user_rejects_email_with_different_case(
 ):
     first_user = UserCreate(
         email="Test@Example.com",
-        password="password123",
+        password="password1234",
     )
 
     created_user = await register_user(
@@ -526,7 +527,7 @@ async def test_register_user_rejects_email_with_different_case(
 
     second_user = UserCreate(
         email="test@example.com",
-        password="password123",
+        password="password1234",
     )
 
     with pytest.raises(UserAlreadyExists):
@@ -540,7 +541,7 @@ async def test_register_user_rejects_email_with_different_case(
 async def test_login_user_accepts_email_with_different_case(db_session, redis_client):
     user_data = UserCreate(
         email="Test@Example.com",
-        password="password123",
+        password="password1234",
     )
 
     await register_user(
@@ -550,7 +551,7 @@ async def test_login_user_accepts_email_with_different_case(db_session, redis_cl
 
     login_data = UserLogin(
         email="TEST@EXAMPLE.COM",
-        password="password123",
+        password="password1234",
     )
 
     token = await login_user(
@@ -840,3 +841,28 @@ async def test_login_with_existing_user_verifies_real_password_hash(
 
     with pytest.raises(InvalidCredentials):
         await login_user(db_session, user_data)
+
+
+@pytest.mark.asyncio
+async def test_register_user_rejects_password_shorter_than_policy(
+    db_session: AsyncSession,
+):
+    user_data = UserCreate(
+        email="short-password@example.com",
+        password="StrongPassword123",
+    )
+
+    with patch(
+        "app.features.auth.service.password_policy.validate",
+        side_effect=PasswordTooShort(),
+    ) as mock_validate:
+        with pytest.raises(PasswordTooShort):
+            await register_user(db_session, user_data)
+
+    mock_validate.assert_called_once_with(user_data.password)
+
+    user = await get_user_by_email(
+        db_session,
+        "short-password@example.com",
+    )
+    assert user is None

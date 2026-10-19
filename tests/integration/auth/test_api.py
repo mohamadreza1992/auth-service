@@ -242,7 +242,7 @@ async def test_login_inactive_user(
 ):
     user = User(
         email="inactive@example.com",
-        password_hash=hash_password("password123"),
+        password_hash=hash_password("password1234"),
         is_active=False,
     )
 
@@ -253,7 +253,7 @@ async def test_login_inactive_user(
         "/auth/login",
         json={
             "email": "inactive@example.com",
-            "password": "password123",
+            "password": "password1234",
         },
     )
 
@@ -496,7 +496,7 @@ async def test_inactive_user_cannot_access_with_old_token(
 ):
     user = User(
         email="active@example.com",
-        password_hash=hash_password("password123"),
+        password_hash=hash_password("password1234"),
         is_active=True,
     )
 
@@ -508,7 +508,7 @@ async def test_inactive_user_cannot_access_with_old_token(
         "/auth/login",
         json={
             "email": "active@example.com",
-            "password": "password123",
+            "password": "password1234",
         },
     )
 
@@ -828,7 +828,7 @@ async def test_inactive_user_cannot_refresh(
 ):
     user = User(
         email="inactive-refresh@example.com",
-        password_hash=hash_password("password123"),
+        password_hash=hash_password("password1234"),
         is_active=True,
     )
 
@@ -840,7 +840,7 @@ async def test_inactive_user_cannot_refresh(
         "/auth/login",
         json={
             "email": "inactive-refresh@example.com",
-            "password": "password123",
+            "password": "password1234",
         },
     )
 

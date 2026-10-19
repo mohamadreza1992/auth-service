@@ -63,3 +63,11 @@ class ProfileNotFound(HTTPException):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="profile not found",
         )
+
+
+class PasswordTooShort(HTTPException):
+    def __init__(self):
+        super().__init__(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Password must be at least 12 characters long",
+        )

@@ -28,6 +28,7 @@ from app.core.token_blacklist import (
     mark_refresh_token_rotated,
 )
 from app.features.auth.models import User
+from app.features.auth.password_policy import PasswordPolicy
 from app.features.auth.repository import create_user, get_user_by_email, get_user_by_id
 from app.features.auth.schemas import RefreshTokenRequest, Token, UserCreate, UserLogin
 from app.features.sessions.lock import (
@@ -47,6 +48,9 @@ from app.features.sessions.session_validation import (
 logger = get_logger(__name__)
 
 
+password_policy = PasswordPolicy()
+
+
 async def register_user(
     db: AsyncSession,
     user_data: UserCreate,
@@ -58,6 +62,7 @@ async def register_user(
 
     if existing_user:
         raise UserAlreadyExists()
+    password_policy.validate(user_data.password)
 
     user = User(
         email=user_data.email,
