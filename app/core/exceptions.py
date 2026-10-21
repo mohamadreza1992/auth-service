@@ -71,3 +71,19 @@ class PasswordTooShort(HTTPException):
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Password must be at least 12 characters long",
         )
+
+
+class PasswordTooWeak(HTTPException):
+    def __init__(self):
+        super().__init__(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Password does not meet complexity requirements",
+        )
+
+
+class CommonPasswordRejected(HTTPException):
+    def __init__(self):
+        super().__init__(
+            status_code=422,
+            detail="Password is too common",
+        )

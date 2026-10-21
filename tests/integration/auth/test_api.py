@@ -14,7 +14,7 @@ from app.features.auth.models import User
 async def test_register_success(client):
     user_data = {
         "email": "api-register@example.com",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
     response = await client.post(
         "/auth/register",
@@ -32,7 +32,7 @@ async def test_register_success(client):
 async def test_register_duplicate_email(client):
     user_data = {
         "email": "api-register_test@example.com",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
 
     response = await client.post(
@@ -53,7 +53,7 @@ async def test_register_duplicate_email(client):
 async def test_register_invalid_email(client):
     user_data = {
         "email": "not-an-email",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
 
     response = await client.post(
@@ -126,7 +126,7 @@ async def test_register_missing_password(client):
 async def test_login_success(client):
     user_data = {
         "email": "api-login@example.com",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
 
     register_response = await client.post(
@@ -150,7 +150,7 @@ async def test_login_success(client):
 async def test_login_user_not_found(client):
     user_data = {
         "email": "api-login-not-found@example.com",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
 
     response = await client.post(
@@ -167,7 +167,7 @@ async def test_login_user_not_found(client):
 async def test_login_wrong_password(client):
     user_data = {
         "email": "api-login-wrong-password@example.com",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
 
     register_response = await client.post(
@@ -177,7 +177,7 @@ async def test_login_wrong_password(client):
 
     wrong_password_data = {
         "email": user_data["email"],
-        "password": "WrongPassword123",
+        "password": "WrongPassword123!",
     }
 
     login_response = await client.post(
@@ -195,7 +195,7 @@ async def test_login_wrong_password(client):
 async def test_login_invalid_email(client):
     user_data = {
         "email": "not-an-email",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
 
     response = await client.post(
@@ -265,7 +265,7 @@ async def test_login_inactive_user(
 async def test_refresh_success(client):
     user_data = {
         "email": "api-refresh@example.com",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
 
     register_response = await client.post(
@@ -374,7 +374,7 @@ async def test_refresh_without_session_id(client):
 async def test_refresh_token_reuse_after_rotation(client):
     user_data = {
         "email": "api-refresh-rotation@example.com",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
 
     register_response = await client.post(
@@ -532,7 +532,7 @@ async def test_inactive_user_cannot_access_with_old_token(
 async def test_concurrent_refresh_with_same_token_only_one_succeeds(client):
     user_data = {
         "email": "concurrent-refresh@example.com",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
 
     register_response = await client.post(
@@ -579,7 +579,7 @@ async def test_concurrent_refresh_with_same_token_only_one_succeeds(client):
 async def test_logout_success(client):
     user_data = {
         "email": "api-logout-success@example.com",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
 
     register_response = await client.post(
@@ -609,7 +609,7 @@ async def test_logout_success(client):
 async def test_logout_revokes_refresh_token(client):
     user_data = {
         "email": "api-logout-revoke@example.com",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
 
     register_response = await client.post(
@@ -649,7 +649,7 @@ async def test_logout_revokes_refresh_token(client):
 async def test_revoke_session_revokes_access_token(client):
     user_data = {
         "email": "api-session-revoke-access@example.com",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
 
     register_response = await client.post(
@@ -708,7 +708,7 @@ async def test_logout_without_access_token(client):
 async def test_logout_all_revokes_all_sessions(client):
     user_data = {
         "email": "api-logout-all@example.com",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
 
     register_response = await client.post(
@@ -768,7 +768,7 @@ async def test_logout_all_revokes_all_sessions(client):
 async def test_logout_revokes_access_token(client):
     user_data = {
         "email": "api-logout-access@example.com",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
 
     register_response = await client.post(
@@ -962,7 +962,7 @@ async def test_refresh_token_with_invalid_session_id(client):
 async def test_concurrent_refresh_does_not_revoke_session(client):
     user_data = {
         "email": "concurrent-refresh-session@example.com",
-        "password": "StrongPassword123",
+        "password": "StrongPassword123@",
     }
 
     register_response = await client.post(

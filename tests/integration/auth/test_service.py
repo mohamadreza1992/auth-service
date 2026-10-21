@@ -53,7 +53,7 @@ async def create_test_session(
 async def test_success_register_user(db_session: AsyncSession):
     user_data = UserCreate(
         email="register@example.com",
-        password="StrongPassword123",
+        password="StrongPassword123@",
     )
 
     created_user = await register_user(
@@ -515,7 +515,7 @@ async def test_register_user_rejects_email_with_different_case(
 ):
     first_user = UserCreate(
         email="Test@Example.com",
-        password="password1234",
+        password="StrongPassword123@",
     )
 
     created_user = await register_user(
@@ -541,7 +541,7 @@ async def test_register_user_rejects_email_with_different_case(
 async def test_login_user_accepts_email_with_different_case(db_session, redis_client):
     user_data = UserCreate(
         email="Test@Example.com",
-        password="password1234",
+        password="StrongPassword123@",
     )
 
     await register_user(
@@ -551,7 +551,7 @@ async def test_login_user_accepts_email_with_different_case(db_session, redis_cl
 
     login_data = UserLogin(
         email="TEST@EXAMPLE.COM",
-        password="password1234",
+        password="StrongPassword123@",
     )
 
     token = await login_user(
@@ -576,7 +576,7 @@ async def test_register_user_handles_integrity_error(
 
     user_data = UserCreate(
         email="race@example.com",
-        password="StrongPassword123",
+        password="StrongPassword123@",
     )
 
     with patch(
@@ -603,7 +603,7 @@ async def test_register_user_rolls_back_after_integrity_error(
 
     user_data = UserCreate(
         email="rollback@example.com",
-        password="StrongPassword123",
+        password="StrongPassword123@",
     )
 
     with patch(
@@ -849,7 +849,7 @@ async def test_register_user_rejects_password_shorter_than_policy(
 ):
     user_data = UserCreate(
         email="short-password@example.com",
-        password="StrongPassword123",
+        password="StrongPassword123@",
     )
 
     with patch(
