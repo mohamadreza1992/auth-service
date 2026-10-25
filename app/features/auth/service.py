@@ -28,7 +28,7 @@ from app.core.token_blacklist import (
     mark_refresh_token_rotated,
 )
 from app.features.auth.models import User
-from app.features.auth.password_policy import PasswordPolicy
+from app.features.auth.password.policy import PasswordPolicy
 from app.features.auth.repository import create_user, get_user_by_email, get_user_by_id
 from app.features.auth.schemas import RefreshTokenRequest, Token, UserCreate, UserLogin
 from app.features.sessions.lock import (

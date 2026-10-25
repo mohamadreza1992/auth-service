@@ -5,7 +5,7 @@ from app.core.exceptions import (
     PasswordTooShort,
     PasswordTooWeak,
 )
-from app.features.auth.password_policy import PasswordPolicy
+from app.features.auth.password.policy import PasswordPolicy
 
 
 def test_password_shorter_than_minimum_is_rejected():
