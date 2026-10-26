@@ -31,6 +31,15 @@ async def create_user(
     return user
 
 
+async def create_user_profile(
+    db: AsyncSession,
+    profile: UserProfile,
+) -> UserProfile:
+    db.add(profile)
+    await db.flush()
+    return profile
+
+
 class UserProfileRepository(Protocol):
     async def get_by_user_id(
         self,
@@ -69,7 +78,6 @@ class SQLAlchemyUserProfileRepository:
         if "avatar_url" in data:
             profile.avatar_url = data["avatar_url"]
 
-        await self.db.commit()
-        await self.db.refresh(profile)
+        await self.db.flush()
 
         return profile

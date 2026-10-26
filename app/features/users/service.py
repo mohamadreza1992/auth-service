@@ -9,6 +9,9 @@ from app.features.users.repository import (
     create_user as repository_create_user,
 )
 from app.features.users.repository import (
+    create_user_profile as repository_create_user_profile,
+)
+from app.features.users.repository import (
     get_user_by_email as repository_get_user_by_email,
 )
 from app.features.users.repository import (
@@ -25,36 +28,52 @@ async def get_profile(repository: UserProfileRepository, user_id: int) -> UserPr
 
 
 async def update_profile(
+    db: AsyncSession,
     repository: UserProfileRepository,
     user_id: int,
     data: ProfileUpdate,
 ) -> UserProfile:
     update_data = data.model_dump(exclude_unset=True)
-    profile = await repository.update(user_id, update_data)
-    if profile is None:
-        raise ProfileNotFound()
 
-    return profile
+    try:
+        profile = await repository.update(user_id, update_data)
+
+        if profile is None:
+            raise ProfileNotFound()
+
+        await db.commit()
+        return profile
+
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def replace_profile(
+    db: AsyncSession,
     repository: UserProfileRepository,
     user_id: int,
     data: ProfileReplace,
 ) -> UserProfile:
-    profile = await repository.update(
-        user_id,
-        {
-            "first_name": data.first_name,
-            "last_name": data.last_name,
-            "avatar_url": data.avatar_url,
-        },
-    )
+    try:
+        profile = await repository.update(
+            user_id,
+            {
+                "first_name": data.first_name,
+                "last_name": data.last_name,
+                "avatar_url": data.avatar_url,
+            },
+        )
 
-    if profile is None:
-        raise ProfileNotFound()
+        if profile is None:
+            raise ProfileNotFound()
 
-    return profile
+        await db.commit()
+        return profile
+
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def get_user_by_id(
@@ -76,3 +95,10 @@ async def create_user(
     user: User,
 ) -> User:
     return await repository_create_user(db, user)
+
+
+async def create_profile(
+    db: AsyncSession,
+    profile: UserProfile,
+) -> UserProfile:
+    return await repository_create_user_profile(db, profile)

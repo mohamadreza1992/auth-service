@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import InvalidCredentials, PasswordTooShort, UserAlreadyExists
@@ -31,7 +32,7 @@ from app.features.sessions.service import (
     delete_all_sessions,
 )
 from app.features.sessions.session_store import get_session
-from app.features.users.models import User
+from app.features.users.models import User, UserProfile
 from app.features.users.repository import get_user_by_email
 
 
@@ -865,4 +866,54 @@ async def test_register_user_rejects_password_shorter_than_policy(
         db_session,
         "short-password@example.com",
     )
+    assert user is None
+
+
+@pytest.mark.asyncio
+async def test_register_user_creates_profile(
+    db_session: AsyncSession,
+) -> None:
+    user_data = UserCreate(
+        email="profile-test@example.com",
+        password="StrongPassword123!",
+    )
+
+    user = await register_user(db_session, user_data)
+
+    result = await db_session.execute(
+        select(UserProfile).where(UserProfile.user_id == user.id)
+    )
+    profile = result.scalar_one_or_none()
+
+    assert profile is not None
+    assert profile.user_id == user.id
+    assert profile.first_name is None
+    assert profile.last_name is None
+    assert profile.avatar_url is None
+
+
+@pytest.mark.asyncio
+async def test_register_user_rolls_back_when_profile_creation_fails(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail_create_profile(*args, **kwargs):
+        raise RuntimeError("Profile creation failed")
+
+    monkeypatch.setattr(
+        "app.features.auth.service.create_profile",
+        fail_create_profile,
+    )
+
+    user_data = UserCreate(
+        email="rollback-test@example.com",
+        password="StrongPassword123!",
+    )
+
+    with pytest.raises(RuntimeError, match="Profile creation failed"):
+        await register_user(db_session, user_data)
+
+    result = await db_session.execute(select(User).where(User.email == user_data.email))
+    user = result.scalar_one_or_none()
+
     assert user is None

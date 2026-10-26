@@ -36,8 +36,9 @@ from app.features.sessions.service import (
     rotate_session_jti,
     run_with_session_lock,
 )
-from app.features.users.models import User
+from app.features.users.models import User, UserProfile
 from app.features.users.service import (
+    create_profile,
     create_user,
     get_user_by_email,
     get_user_by_id,
@@ -53,13 +54,11 @@ async def register_user(
     db: AsyncSession,
     user_data: UserCreate,
 ) -> User:
-    existing_user = await get_user_by_email(
-        db,
-        user_data.email,
-    )
+    existing_user = await get_user_by_email(db, user_data.email)
 
     if existing_user:
         raise UserAlreadyExists()
+
     password_policy.validate(user_data.password)
 
     user = User(
@@ -67,16 +66,24 @@ async def register_user(
         password_hash=hash_password(user_data.password),
         is_active=True,
     )
+
     try:
-        user = await create_user(
+        user = await create_user(db, user)
+
+        await create_profile(
             db,
-            user,
+            UserProfile(user_id=user.id),
         )
+
         await db.commit()
         return user
+
     except IntegrityError as exc:
         await db.rollback()
         raise UserAlreadyExists() from exc
+    except Exception:
+        await db.rollback()
+        raise
 
 
 async def login_user(

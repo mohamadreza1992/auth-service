@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database.session import get_db
 from app.dependencies.current_user import AuthContext, get_current_user
 from app.features.users.dependencies import get_user_profile_repository
 from app.features.users.repository import UserProfileRepository
@@ -27,10 +29,12 @@ async def get_my_profile(
 @router.patch("/profile", response_model=UserProfileResponse)
 async def update_my_profile(
     data: ProfileUpdate,
+    db: AsyncSession = Depends(get_db),
     auth: AuthContext = Depends(get_current_user),
     repository: UserProfileRepository = Depends(get_user_profile_repository),
 ):
     return await update_profile(
+        db,
         repository,
         auth.user.id,
         data,
@@ -40,7 +44,13 @@ async def update_my_profile(
 @router.put("/profile", response_model=UserProfileResponse)
 async def update_complete_profile(
     data: ProfileReplace,
+    db: AsyncSession = Depends(get_db),
     auth: AuthContext = Depends(get_current_user),
     repository: UserProfileRepository = Depends(get_user_profile_repository),
 ):
-    return await replace_profile(repository, auth.user.id, data)
+    return await replace_profile(
+        db,
+        repository,
+        auth.user.id,
+        data,
+    )
