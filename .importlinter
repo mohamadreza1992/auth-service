@@ -1,0 +1,57 @@
+[importlinter]
+root_package = app
+
+[importlinter:contract:layers]
+name = Layers: main > api > dependencies > features > database > core
+type = layers
+layers =
+    app.main
+    app.api
+    app.dependencies
+    app.features
+    app.database
+    app.core
+ignore_imports =
+    app.features.*.router -> app.dependencies.*
+
+[importlinter:contract:sessions-independent-of-auth]
+name = sessions must not import auth
+type = forbidden
+source_modules =
+    app.features.sessions
+forbidden_modules =
+    app.features.auth
+allow_indirect_imports = True
+
+[importlinter:contract:users-independent]
+name = users must not import auth or sessions
+type = forbidden
+source_modules =
+    app.features.users
+forbidden_modules =
+    app.features.auth
+    app.features.sessions
+allow_indirect_imports = True
+
+[importlinter:contract:sessions-public-api]
+name = Other packages use sessions only through its service and schemas
+type = forbidden
+source_modules =
+    app.features.auth
+    app.dependencies
+forbidden_modules =
+    app.features.sessions.session_store
+    app.features.sessions.session_validation
+    app.features.sessions.lock
+allow_indirect_imports = True
+
+[importlinter:contract:users-public-api]
+name = Other packages use users only through its service
+type = forbidden
+source_modules =
+    app.features.auth
+    app.features.sessions
+    app.dependencies
+forbidden_modules =
+    app.features.users.repository
+allow_indirect_imports = True

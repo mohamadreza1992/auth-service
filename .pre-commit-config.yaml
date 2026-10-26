@@ -4,3 +4,12 @@ repos:
     hooks:
       - id: ruff-check
       - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: import-linter
+        name: import-linter
+        entry: uv run lint-imports
+        language: system
+        pass_filenames: false
+        files: ^(app/.*\.py|\.importlinter)$

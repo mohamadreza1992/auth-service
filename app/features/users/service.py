@@ -1,6 +1,19 @@
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.exceptions import ProfileNotFound
-from app.features.users.models import UserProfile
-from app.features.users.repository import UserProfileRepository
+from app.features.users.models import User, UserProfile
+from app.features.users.repository import (
+    UserProfileRepository,
+)
+from app.features.users.repository import (
+    create_user as repository_create_user,
+)
+from app.features.users.repository import (
+    get_user_by_email as repository_get_user_by_email,
+)
+from app.features.users.repository import (
+    get_user_by_id as repository_get_user_by_id,
+)
 from app.features.users.schemas import ProfileReplace, ProfileUpdate
 
 
@@ -42,3 +55,24 @@ async def replace_profile(
         raise ProfileNotFound()
 
     return profile
+
+
+async def get_user_by_id(
+    db: AsyncSession,
+    user_id: int,
+) -> User | None:
+    return await repository_get_user_by_id(db, user_id)
+
+
+async def get_user_by_email(
+    db: AsyncSession,
+    email: str,
+) -> User | None:
+    return await repository_get_user_by_email(db, email)
+
+
+async def create_user(
+    db: AsyncSession,
+    user: User,
+) -> User:
+    return await repository_create_user(db, user)

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import create_access_token, create_refresh_token, hash_password
-from app.features.auth.models import User
+from app.features.users.models import User
 
 
 @pytest.mark.asyncio

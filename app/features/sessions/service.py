@@ -1,7 +1,7 @@
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from ipaddress import IPv4Address, IPv6Address
 from uuid import uuid4
-
-from pydantic import IPvAnyAddress
 
 from app.core.exceptions import SessionOperationInProgress
 from app.features.sessions.lock import (
@@ -20,11 +20,26 @@ from app.features.sessions.session_store import (
 from app.features.sessions.session_validation import validate_session
 
 
+async def run_with_session_lock[T](
+    user_id: int,
+    operation: Callable[[], Awaitable[T]],
+) -> T:
+    lock_token = await acquire_session_lock(user_id)
+
+    if lock_token is None:
+        raise SessionOperationInProgress()
+
+    try:
+        return await operation()
+    finally:
+        await release_session_lock(user_id, lock_token)
+
+
 async def create_session(
     user_id: int,
     jti: str,
     device: str | None,
-    ip_address: IPvAnyAddress | None,
+    ip_address: IPv4Address | IPv6Address | None,
     expire_seconds: int,
 ):
     session_id = uuid4()
@@ -56,6 +71,10 @@ async def fetch_session(user_id: int, session_id: str):
     )
 
     return response
+
+
+async def get_validated_session(user_id: int, session_id: str):
+    return await validate_session(user_id, session_id)
 
 
 async def revoke_session(user_id: int, session_id: str):

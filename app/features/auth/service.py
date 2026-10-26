@@ -10,7 +10,6 @@ from app.core.exceptions import (
     InvalidCredentials,
     InvalidRefreshToken,
     InvalidToken,
-    SessionOperationInProgress,
     UserAlreadyExists,
 )
 from app.core.logging import get_logger
@@ -27,22 +26,21 @@ from app.core.token_blacklist import (
     get_refresh_token_rotation_time,
     mark_refresh_token_rotated,
 )
-from app.features.auth.models import User
 from app.features.auth.password.policy import PasswordPolicy
-from app.features.auth.repository import create_user, get_user_by_email, get_user_by_id
 from app.features.auth.schemas import RefreshTokenRequest, Token, UserCreate, UserLogin
-from app.features.sessions.lock import (
-    acquire_session_lock,
-    release_session_lock,
-)
 from app.features.sessions.service import (
     create_session,
+    get_validated_session,
     revoke_all_sessions,
     revoke_session,
     rotate_session_jti,
+    run_with_session_lock,
 )
-from app.features.sessions.session_validation import (
-    validate_session,
+from app.features.users.models import User
+from app.features.users.service import (
+    create_user,
+    get_user_by_email,
+    get_user_by_id,
 )
 
 logger = get_logger(__name__)
@@ -104,12 +102,7 @@ async def login_user(
     if not user.is_active:
         raise InvalidCredentials()
 
-    lock_token = await acquire_session_lock(user.id)
-
-    if lock_token is None:
-        raise SessionOperationInProgress()
-
-    try:
+    async def create_login_tokens() -> Token:
         jti = str(uuid.uuid4())
 
         session = await create_session(
@@ -142,11 +135,11 @@ async def login_user(
             refresh_token=refresh_token,
             token_type="bearer",
         )
-    finally:
-        await release_session_lock(
-            user.id,
-            lock_token,
-        )
+
+    return await run_with_session_lock(
+        user.id,
+        create_login_tokens,
+    )
 
 
 async def refresh_access_token(
@@ -193,7 +186,7 @@ async def refresh_access_token(
     if not user.is_active:
         raise InvalidRefreshToken()
 
-    session = await validate_session(
+    session = await get_validated_session(
         user_id,
         session_id,
     )

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import get_db
-from app.features.auth.dependencies import get_current_user
+from app.dependencies.current_user import get_current_user
 from app.features.auth.schemas import (
     RefreshTokenRequest,
     Token,

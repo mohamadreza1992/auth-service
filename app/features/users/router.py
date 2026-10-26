@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.features.auth.dependencies import AuthContext, get_current_user
+from app.dependencies.current_user import AuthContext, get_current_user
 from app.features.users.dependencies import get_user_profile_repository
 from app.features.users.repository import UserProfileRepository
 from app.features.users.schemas import (

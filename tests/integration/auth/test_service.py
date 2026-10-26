@@ -17,8 +17,6 @@ from app.core.security import (
     hash_password,
 )
 from app.core.token_blacklist import is_token_blacklisted
-from app.features.auth.models import User
-from app.features.auth.repository import get_user_by_email
 from app.features.auth.schemas import RefreshTokenRequest, UserCreate, UserLogin
 from app.features.auth.service import (
     login_user,
@@ -33,6 +31,8 @@ from app.features.sessions.service import (
     delete_all_sessions,
 )
 from app.features.sessions.session_store import get_session
+from app.features.users.models import User
+from app.features.users.repository import get_user_by_email
 
 
 async def create_test_session(

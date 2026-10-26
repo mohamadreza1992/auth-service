@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.features.auth.dependencies import get_current_user
+from app.dependencies.current_user import get_current_user
 from app.features.sessions.schemas import SessionResponse
 from app.features.sessions.service import (
     fetch_session,

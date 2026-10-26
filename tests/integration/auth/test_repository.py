@@ -1,8 +1,8 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.features.auth.models import User
-from app.features.auth.repository import create_user, get_user_by_email, get_user_by_id
+from app.features.users.models import User
+from app.features.users.repository import create_user, get_user_by_email, get_user_by_id
 
 
 @pytest.mark.asyncio
