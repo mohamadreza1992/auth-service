@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 
 from app.features.sessions import session_store
-from app.features.sessions.schemas import Session
+from app.features.sessions.entities import Session
 
 
 @pytest.mark.asyncio

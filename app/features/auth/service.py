@@ -1,4 +1,5 @@
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from jose import JWTError
@@ -27,7 +28,6 @@ from app.core.token_blacklist import (
     mark_refresh_token_rotated,
 )
 from app.features.auth.password.policy import PasswordPolicy
-from app.features.auth.schemas import RefreshTokenRequest, Token, UserCreate, UserLogin
 from app.features.sessions.service import (
     create_session,
     get_validated_session,
@@ -50,20 +50,30 @@ logger = get_logger(__name__)
 password_policy = PasswordPolicy()
 
 
+@dataclass(frozen=True)
+class TokenPair:
+    access_token: str
+    refresh_token: str
+
+
 async def register_user(
     db: AsyncSession,
-    user_data: UserCreate,
+    *,
+    email: str,
+    password: str,
 ) -> User:
-    existing_user = await get_user_by_email(db, user_data.email)
+    normalized_email = email.strip().lower()
+
+    existing_user = await get_user_by_email(db, normalized_email)
 
     if existing_user:
         raise UserAlreadyExists()
 
-    password_policy.validate(user_data.password)
+    password_policy.validate(password)
 
     user = User(
-        email=user_data.email,
-        password_hash=hash_password(user_data.password),
+        email=normalized_email,
+        password_hash=hash_password(password),
         is_active=True,
     )
 
@@ -88,17 +98,21 @@ async def register_user(
 
 async def login_user(
     db: AsyncSession,
-    user_data: UserLogin,
-) -> Token:
+    *,
+    email: str,
+    password: str,
+) -> TokenPair:
+    normalized_email = email.strip().lower()
+
     user = await get_user_by_email(
         db,
-        user_data.email,
+        normalized_email,
     )
 
     password_hash_to_verify = user.password_hash if user else DUMMY_PASSWORD_HASH
 
     if not verify_password(
-        user_data.password,
+        password,
         password_hash_to_verify,
     ):
         raise InvalidCredentials()
@@ -109,7 +123,7 @@ async def login_user(
     if not user.is_active:
         raise InvalidCredentials()
 
-    async def create_login_tokens() -> Token:
+    async def create_login_tokens() -> TokenPair:
         jti = str(uuid.uuid4())
 
         session = await create_session(
@@ -117,7 +131,7 @@ async def login_user(
             jti=jti,
             device=None,
             ip_address=None,
-            expire_seconds=settings.jwt_refresh_token_expire_days * 24 * 60 * 60,
+            expire_seconds=(settings.jwt_refresh_token_expire_days * 24 * 60 * 60),
         )
 
         session_id = str(session.session_id)
@@ -137,10 +151,9 @@ async def login_user(
             jti=jti,
         )
 
-        return Token(
+        return TokenPair(
             access_token=access_token,
             refresh_token=refresh_token,
-            token_type="bearer",
         )
 
     return await run_with_session_lock(
@@ -151,12 +164,13 @@ async def login_user(
 
 async def refresh_access_token(
     db: AsyncSession,
-    data: RefreshTokenRequest,
-):
+    *,
+    refresh_token: str,
+) -> TokenPair:
     request_started_at = datetime.now(UTC).timestamp()
 
     try:
-        payload = decode_refresh_token(data.refresh_token)
+        payload = decode_refresh_token(refresh_token)
     except JWTError:
         raise InvalidRefreshToken() from None
 
@@ -244,14 +258,18 @@ async def refresh_access_token(
             remaining_time,
         )
 
-    return Token(
+    return TokenPair(
         access_token=access_token,
         refresh_token=new_refresh_token,
-        token_type="bearer",
     )
 
 
-async def logout_user(user_id: int, session_id: str, token_jti: str, token_exp: int):
+async def logout_user(
+    user_id: int,
+    session_id: str,
+    token_jti: str,
+    token_exp: int,
+) -> None:
     await revoke_session(
         user_id,
         session_id,
@@ -272,12 +290,6 @@ async def logout_user(user_id: int, session_id: str, token_jti: str, token_exp: 
             remaining_time,
         )
 
-    return {"message": "Successfully logged out"}
 
-
-async def logout_all_users(user_id: int):
+async def logout_all_users(user_id: int) -> None:
     await revoke_all_sessions(user_id)
-
-    return {
-        "message": "Successfully logged out from all devices",
-    }

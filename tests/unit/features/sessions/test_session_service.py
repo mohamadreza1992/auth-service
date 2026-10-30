@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 import app.features.sessions.service as service
-from app.features.sessions.schemas import Session, SessionResponse
+from app.features.sessions.entities import Session
 
 
 def make_session() -> Session:
@@ -60,32 +60,27 @@ async def test_create_session(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fetch_session(monkeypatch):
+async def test_get_validated_session(monkeypatch):
     session = make_session()
-
-    async def mock_validate_session(
-        user_id: int,
-        session_id: str,
-    ) -> Session:
-        return session
+    validate_mock = AsyncMock(return_value=session)
 
     monkeypatch.setattr(
         service,
         "validate_session",
-        mock_validate_session,
+        validate_mock,
     )
 
-    result = await service.fetch_session(
+    result = await service.get_validated_session(
         session.user_id,
         str(session.session_id),
     )
 
-    assert isinstance(result, SessionResponse)
-    assert result.session_id == session.session_id
-    assert result.device == session.device
-    assert result.ip_address == session.ip_address
-    assert result.created_at == session.created_at
-    assert result.last_used_at == session.last_used_at
+    assert result is session
+
+    validate_mock.assert_awaited_once_with(
+        session.user_id,
+        str(session.session_id),
+    )
 
 
 @pytest.mark.asyncio
@@ -213,20 +208,7 @@ async def test_list_user_sessions(monkeypatch):
 
     result = await service.list_user_sessions(123)
 
-    assert len(result) == 2
-    assert all(isinstance(session, SessionResponse) for session in result)
-
-    assert result[0].session_id == session_1.session_id
-    assert result[1].session_id == session_2.session_id
-
-    assert result[0].device == session_1.device
-    assert result[0].ip_address == session_1.ip_address
-
-    assert result[0].created_at == session_1.created_at
-    assert result[0].last_used_at == session_1.last_used_at
-
-    assert result[1].created_at == session_2.created_at
-    assert result[1].last_used_at == session_2.last_used_at
+    assert result == [session_1, session_2]
 
     get_all_mock.assert_awaited_once_with(123)
 

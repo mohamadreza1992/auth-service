@@ -37,7 +37,7 @@ async def update_my_profile(
         db,
         repository,
         auth.user.id,
-        data,
+        data.model_dump(mode="json", exclude_unset=True),
     )
 
 
@@ -52,5 +52,7 @@ async def update_complete_profile(
         db,
         repository,
         auth.user.id,
-        data,
+        first_name=data.first_name,
+        last_name=data.last_name,
+        avatar_url=str(data.avatar_url),
     )

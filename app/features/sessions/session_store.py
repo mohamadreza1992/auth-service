@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from redis.exceptions import WatchError
 
 from app.core.redis_client import redis_client
-from app.features.sessions.schemas import Session
+from app.features.sessions.entities import Session
 
 
 async def save_session(session: Session, expire_seconds: int) -> None:

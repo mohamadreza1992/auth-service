@@ -1,5 +1,5 @@
 from app.core.exceptions import InvalidSession, InvalidToken
-from app.features.sessions.schemas import Session
+from app.features.sessions.entities import Session
 from app.features.sessions.session_store import get_session
 
 

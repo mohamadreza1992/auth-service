@@ -6,7 +6,7 @@ import pytest
 from redis.exceptions import WatchError
 
 import app.features.sessions.session_store as session_store
-from app.features.sessions.schemas import Session
+from app.features.sessions.entities import Session
 from app.features.sessions.session_store import (
     delete_all_sessions,
     delete_session,

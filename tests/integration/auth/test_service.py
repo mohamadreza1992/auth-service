@@ -18,15 +18,15 @@ from app.core.security import (
     hash_password,
 )
 from app.core.token_blacklist import is_token_blacklisted
-from app.features.auth.schemas import RefreshTokenRequest, UserCreate, UserLogin
 from app.features.auth.service import (
+    TokenPair,
     login_user,
     logout_all_users,
     logout_user,
     refresh_access_token,
     register_user,
 )
-from app.features.sessions.schemas import Session
+from app.features.sessions.entities import Session
 from app.features.sessions.service import (
     create_session,
     delete_all_sessions,
@@ -52,20 +52,19 @@ async def create_test_session(
 
 @pytest.mark.asyncio
 async def test_success_register_user(db_session: AsyncSession):
-    user_data = UserCreate(
-        email="register@example.com",
-        password="StrongPassword123@",
-    )
+    email = "register@example.com"
+    password = "StrongPassword123@"
 
     created_user = await register_user(
         db_session,
-        user_data,
+        email=email,
+        password=password,
     )
 
     assert created_user is not None
-    assert created_user.email == user_data.email
+    assert created_user.email == email
     assert created_user.is_active is True
-    assert created_user.password_hash != user_data.password
+    assert created_user.password_hash != password
 
 
 @pytest.mark.asyncio
@@ -81,15 +80,11 @@ async def test_register_user_with_existing_email(
     db_session.add(existing_user)
     await db_session.commit()
 
-    user_data = UserCreate(
-        email="duplicate@example.com",
-        password="StrongPassword123",
-    )
-
     with pytest.raises(HTTPException) as exc_info:
         await register_user(
             db_session,
-            user_data,
+            email="duplicate@example.com",
+            password="StrongPassword123",
         )
 
     assert exc_info.value.status_code == 409
@@ -108,19 +103,15 @@ async def test_successful_login(
     db_session.add(existing_user)
     await db_session.commit()
 
-    user_data = UserLogin(
+    result = await login_user(
+        db_session,
         email="login@example.com",
         password="StrongPassword123",
     )
 
-    result = await login_user(
-        db_session,
-        user_data,
-    )
-
+    assert isinstance(result, TokenPair)
     assert result.access_token
     assert result.refresh_token
-    assert result.token_type == "bearer"
 
     payload = decode_refresh_token(result.refresh_token)
 
@@ -139,15 +130,11 @@ async def test_successful_login(
 async def test_login_user_not_found(
     db_session: AsyncSession,
 ):
-    user_data = UserLogin(
-        email="not-found@example.com",
-        password="StrongPassword123",
-    )
-
     with pytest.raises(HTTPException) as exc_info:
         await login_user(
             db_session,
-            user_data,
+            email="not-found@example.com",
+            password="StrongPassword123",
         )
 
     assert exc_info.value.status_code == 401
@@ -167,15 +154,11 @@ async def test_login_user_wrong_password(
     db_session.add(existing_user)
     await db_session.commit()
 
-    user_data = UserLogin(
-        email="login@example.com",
-        password="wrongpassword",
-    )
-
     with pytest.raises(HTTPException) as exc_info:
         await login_user(
             db_session,
-            user_data,
+            email="login@example.com",
+            password="wrongpassword",
         )
 
     assert exc_info.value.status_code == 401
@@ -192,12 +175,8 @@ async def test_refresh_access_token_without_user_id(db_session: AsyncSession):
         jti=str(uuid4()),
     )
 
-    data = RefreshTokenRequest(
-        refresh_token=refresh_token,
-    )
-
     with pytest.raises(HTTPException) as exc_info:
-        await refresh_access_token(db_session, data)
+        await refresh_access_token(db_session, refresh_token=refresh_token)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid refresh token"
@@ -213,12 +192,8 @@ async def test_refresh_access_token_without_session_id(db_session: AsyncSession)
         jti=str(uuid4()),
     )
 
-    data = RefreshTokenRequest(
-        refresh_token=refresh_token,
-    )
-
     with pytest.raises(HTTPException) as exc_info:
-        await refresh_access_token(db_session, data)
+        await refresh_access_token(db_session, refresh_token=refresh_token)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid refresh token"
@@ -248,12 +223,8 @@ async def test_refresh_access_token_token_not_found(
         jti=str(uuid4()),
     )
 
-    data = RefreshTokenRequest(
-        refresh_token=refresh_token,
-    )
-
     with pytest.raises(HTTPException) as exc_info:
-        await refresh_access_token(db_session, data)
+        await refresh_access_token(db_session, refresh_token=refresh_token)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid session"
@@ -292,12 +263,8 @@ async def test_refresh_access_token_token_mismatch(
         expires_delta=timedelta(days=2),
     )
 
-    data = RefreshTokenRequest(
-        refresh_token=wrong_token,
-    )
-
     with pytest.raises(HTTPException) as exc_info:
-        await refresh_access_token(db_session, data)
+        await refresh_access_token(db_session, refresh_token=wrong_token)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid token"
@@ -334,12 +301,9 @@ async def test_successful_refresh_access_token(
         jti=old_jti,
     )
 
-    data = RefreshTokenRequest(
-        refresh_token=refresh_token,
-    )
+    result = await refresh_access_token(db_session, refresh_token=refresh_token)
 
-    result = await refresh_access_token(db_session, data)
-
+    assert isinstance(result, TokenPair)
     assert result.access_token
     assert result.refresh_token
     assert result.refresh_token != refresh_token
@@ -374,16 +338,12 @@ async def test_successful_logout_user(
 
     token_exp = int(datetime.now(UTC).timestamp()) + 60
 
-    result = await logout_user(
+    await logout_user(
         user_id=1,
         session_id=str(session.session_id),
         token_jti=token_jti,
         token_exp=token_exp,
     )
-
-    assert result == {
-        "message": "Successfully logged out",
-    }
 
     stored_session = await get_session(
         1,
@@ -407,16 +367,12 @@ async def test_logout_user_with_expired_token(
 
     token_exp = int(datetime.now(UTC).timestamp()) - 60
 
-    result = await logout_user(
+    await logout_user(
         user_id=1,
         session_id=str(session.session_id),
         token_jti=token_jti,
         token_exp=token_exp,
     )
-
-    assert result == {
-        "message": "Successfully logged out",
-    }
 
     stored_session = await get_session(
         1,
@@ -433,16 +389,12 @@ async def test_logout_user_without_refresh_token(
 ):
     token_jti = str(uuid4())
 
-    result = await logout_user(
+    await logout_user(
         user_id=1,
         session_id="not-found-session",
         token_jti=token_jti,
         token_exp=int(datetime.now(UTC).timestamp()) + 60,
     )
-
-    assert result == {
-        "message": "Successfully logged out",
-    }
 
     assert await is_token_blacklisted(token_jti) is True
 
@@ -471,11 +423,7 @@ async def test_logout_all_users(
         jti=str(uuid4()),
     )
 
-    result = await logout_all_users(1)
-
-    assert result == {
-        "message": "Successfully logged out from all devices",
-    }
+    await logout_all_users(1)
 
     assert (
         await get_session(
@@ -514,50 +462,34 @@ async def test_logout_all_users(
 async def test_register_user_rejects_email_with_different_case(
     db_session,
 ):
-    first_user = UserCreate(
+    created_user = await register_user(
+        db_session,
         email="Test@Example.com",
         password="StrongPassword123@",
     )
 
-    created_user = await register_user(
-        db_session,
-        first_user,
-    )
-
     assert created_user.email == "test@example.com"
-
-    second_user = UserCreate(
-        email="test@example.com",
-        password="password1234",
-    )
 
     with pytest.raises(UserAlreadyExists):
         await register_user(
             db_session,
-            second_user,
+            email="test@example.com",
+            password="StrongPassword123@",
         )
 
 
 @pytest.mark.asyncio
 async def test_login_user_accepts_email_with_different_case(db_session, redis_client):
-    user_data = UserCreate(
-        email="Test@Example.com",
-        password="StrongPassword123@",
-    )
-
     await register_user(
         db_session,
-        user_data,
-    )
-
-    login_data = UserLogin(
-        email="TEST@EXAMPLE.COM",
+        email="Test@Example.com",
         password="StrongPassword123@",
     )
 
     token = await login_user(
         db_session,
-        login_data,
+        email="TEST@EXAMPLE.COM",
+        password="StrongPassword123@",
     )
 
     assert token is not None
@@ -575,17 +507,16 @@ async def test_register_user_handles_integrity_error(
     db_session.add(existing_user)
     await db_session.commit()
 
-    user_data = UserCreate(
-        email="race@example.com",
-        password="StrongPassword123@",
-    )
-
     with patch(
         "app.features.auth.service.get_user_by_email",
         new=AsyncMock(return_value=None),
     ):
         with pytest.raises(HTTPException) as exc_info:
-            await register_user(db_session, user_data)
+            await register_user(
+                db_session,
+                email="race@example.com",
+                password="StrongPassword123@",
+            )
 
     assert exc_info.value.status_code == 409
 
@@ -602,17 +533,16 @@ async def test_register_user_rolls_back_after_integrity_error(
     db_session.add(existing_user)
     await db_session.commit()
 
-    user_data = UserCreate(
-        email="rollback@example.com",
-        password="StrongPassword123@",
-    )
-
     with patch(
         "app.features.auth.service.get_user_by_email",
         new=AsyncMock(return_value=None),
     ):
         with pytest.raises(HTTPException) as exc_info:
-            await register_user(db_session, user_data)
+            await register_user(
+                db_session,
+                email="rollback@example.com",
+                password="StrongPassword123@",
+            )
 
     assert exc_info.value.status_code == 409
 
@@ -638,12 +568,8 @@ async def test_refresh_access_token_with_malformed_user_id(db_session: AsyncSess
         jti=str(uuid4()),
     )
 
-    data = RefreshTokenRequest(
-        refresh_token=refresh_token,
-    )
-
     with pytest.raises(HTTPException) as exc_info:
-        await refresh_access_token(db_session, data)
+        await refresh_access_token(db_session, refresh_token=refresh_token)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid refresh token"
@@ -680,13 +606,9 @@ async def test_concurrent_refresh_access_token_allows_only_one_refresh(
         jti=old_jti,
     )
 
-    data = RefreshTokenRequest(
-        refresh_token=refresh_token,
-    )
-
     results = await asyncio.gather(
-        refresh_access_token(db_session, data),
-        refresh_access_token(db_session, data),
+        refresh_access_token(db_session, refresh_token=refresh_token),
+        refresh_access_token(db_session, refresh_token=refresh_token),
         return_exceptions=True,
     )
 
@@ -796,13 +718,12 @@ async def test_login_with_nonexistent_email_verifies_dummy_password_hash(
         fake_verify_password,
     )
 
-    user_data = UserLogin(
-        email="nonexistent@example.com",
-        password="wrong-password",
-    )
-
     with pytest.raises(InvalidCredentials):
-        await login_user(db_session, user_data)
+        await login_user(
+            db_session,
+            email="nonexistent@example.com",
+            password="wrong-password",
+        )
 
     assert verify_called is True
 
@@ -835,36 +756,33 @@ async def test_login_with_existing_user_verifies_real_password_hash(
         fake_verify_password,
     )
 
-    user_data = UserLogin(
-        email="existing@example.com",
-        password="wrong-password",
-    )
-
     with pytest.raises(InvalidCredentials):
-        await login_user(db_session, user_data)
+        await login_user(
+            db_session,
+            email="existing@example.com",
+            password="wrong-password",
+        )
 
 
 @pytest.mark.asyncio
 async def test_register_user_rejects_password_shorter_than_policy(
     db_session: AsyncSession,
 ):
-    user_data = UserCreate(
-        email="short-password@example.com",
-        password="StrongPassword123@",
-    )
+    email = "short-password@example.com"
+    password = "StrongPassword123@"
 
     with patch(
         "app.features.auth.service.password_policy.validate",
         side_effect=PasswordTooShort(),
     ) as mock_validate:
         with pytest.raises(PasswordTooShort):
-            await register_user(db_session, user_data)
+            await register_user(db_session, email=email, password=password)
 
-    mock_validate.assert_called_once_with(user_data.password)
+    mock_validate.assert_called_once_with(password)
 
     user = await get_user_by_email(
         db_session,
-        "short-password@example.com",
+        email,
     )
     assert user is None
 
@@ -873,12 +791,11 @@ async def test_register_user_rejects_password_shorter_than_policy(
 async def test_register_user_creates_profile(
     db_session: AsyncSession,
 ) -> None:
-    user_data = UserCreate(
+    user = await register_user(
+        db_session,
         email="profile-test@example.com",
         password="StrongPassword123!",
     )
-
-    user = await register_user(db_session, user_data)
 
     result = await db_session.execute(
         select(UserProfile).where(UserProfile.user_id == user.id)
@@ -905,15 +822,16 @@ async def test_register_user_rolls_back_when_profile_creation_fails(
         fail_create_profile,
     )
 
-    user_data = UserCreate(
-        email="rollback-test@example.com",
-        password="StrongPassword123!",
-    )
+    email = "rollback-test@example.com"
 
     with pytest.raises(RuntimeError, match="Profile creation failed"):
-        await register_user(db_session, user_data)
+        await register_user(
+            db_session,
+            email=email,
+            password="StrongPassword123!",
+        )
 
-    result = await db_session.execute(select(User).where(User.email == user_data.email))
+    result = await db_session.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
     assert user is None

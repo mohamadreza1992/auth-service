@@ -1,3 +1,5 @@
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ProfileNotFound
@@ -17,7 +19,6 @@ from app.features.users.repository import (
 from app.features.users.repository import (
     get_user_by_id as repository_get_user_by_id,
 )
-from app.features.users.schemas import ProfileReplace, ProfileUpdate
 
 
 async def get_profile(repository: UserProfileRepository, user_id: int) -> UserProfile:
@@ -31,12 +32,12 @@ async def update_profile(
     db: AsyncSession,
     repository: UserProfileRepository,
     user_id: int,
-    data: ProfileUpdate,
+    fields: dict[str, Any],
 ) -> UserProfile:
-    update_data = data.model_dump(exclude_unset=True)
-
+    # PATCH semantics: `fields` holds only what the client sent.
+    # A missing key means "leave unchanged"; a key with None means "set to null".
     try:
-        profile = await repository.update(user_id, update_data)
+        profile = await repository.update(user_id, fields)
 
         if profile is None:
             raise ProfileNotFound()
@@ -53,15 +54,18 @@ async def replace_profile(
     db: AsyncSession,
     repository: UserProfileRepository,
     user_id: int,
-    data: ProfileReplace,
+    *,
+    first_name: str,
+    last_name: str,
+    avatar_url: str,
 ) -> UserProfile:
     try:
         profile = await repository.update(
             user_id,
             {
-                "first_name": data.first_name,
-                "last_name": data.last_name,
-                "avatar_url": data.avatar_url,
+                "first_name": first_name,
+                "last_name": last_name,
+                "avatar_url": avatar_url,
             },
         )
 

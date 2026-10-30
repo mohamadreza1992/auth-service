@@ -3,9 +3,12 @@ from datetime import datetime
 from pydantic import UUID4, BaseModel, Field, IPvAnyAddress, field_validator
 
 
-class SessionTimestamps(BaseModel):
+class SessionResponse(BaseModel):
     created_at: datetime
     last_used_at: datetime
+    session_id: UUID4
+    device: str | None = None
+    ip_address: IPvAnyAddress | None = None
 
     @field_validator(
         "created_at",
@@ -17,20 +20,6 @@ class SessionTimestamps(BaseModel):
             raise ValueError("datetime must be timezone-aware")
 
         return value
-
-
-class Session(SessionTimestamps):
-    session_id: UUID4
-    user_id: int
-    jti: str
-    device: str | None = None
-    ip_address: IPvAnyAddress | None = None
-
-
-class SessionResponse(SessionTimestamps):
-    session_id: UUID4
-    device: str | None = None
-    ip_address: IPvAnyAddress | None = None
 
 
 class SessionCreate(BaseModel):

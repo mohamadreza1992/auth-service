@@ -11,6 +11,7 @@ from app.features.auth.schemas import (
     UserResponse,
 )
 from app.features.auth.service import (
+    TokenPair,
     login_user,
     logout_all_users,
     logout_user,
@@ -24,6 +25,14 @@ router = APIRouter(
 )
 
 
+def to_token(pair: TokenPair) -> Token:
+    return Token(
+        access_token=pair.access_token,
+        refresh_token=pair.refresh_token,
+        token_type="bearer",
+    )
+
+
 @router.post(
     "/register",
     response_model=UserResponse,
@@ -32,10 +41,7 @@ async def register(
     user_data: UserCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    return await register_user(
-        db,
-        user_data,
-    )
+    return await register_user(db, email=user_data.email, password=user_data.password)
 
 
 @router.post(
@@ -43,10 +49,12 @@ async def register(
     response_model=Token,
 )
 async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
-    return await login_user(
+    pair = await login_user(
         db,
-        user_data,
+        email=user_data.email,
+        password=user_data.password,
     )
+    return to_token(pair)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -60,19 +68,22 @@ async def me(
 async def logout(
     auth=Depends(get_current_user),
 ):
-    return await logout_user(
+    await logout_user(
         user_id=auth.user.id,
         session_id=auth.session_id,
         token_jti=auth.token_jti,
         token_exp=auth.token_exp,
     )
+    return {"message": "Successfully logged out"}
 
 
 @router.post("/refresh", response_model=Token)
 async def refresh(data: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
-    return await refresh_access_token(db, data)
+    pair = await refresh_access_token(db, refresh_token=data.refresh_token)
+    return to_token(pair)
 
 
 @router.post("/logout-all")
 async def logout_all(auth=Depends(get_current_user)):
-    return await logout_all_users(auth.user.id)
+    await logout_all_users(auth.user.id)
+    return {"message": "Successfully logged out from all devices"}

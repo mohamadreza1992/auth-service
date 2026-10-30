@@ -4,11 +4,11 @@ from ipaddress import IPv4Address, IPv6Address
 from uuid import uuid4
 
 from app.core.exceptions import SessionOperationInProgress
+from app.features.sessions.entities import Session
 from app.features.sessions.lock import (
     acquire_session_lock,
     release_session_lock,
 )
-from app.features.sessions.schemas import Session, SessionResponse
 from app.features.sessions.session_store import (
     delete_all_sessions,
     delete_session,
@@ -41,7 +41,7 @@ async def create_session(
     device: str | None,
     ip_address: IPv4Address | IPv6Address | None,
     expire_seconds: int,
-):
+) -> Session:
     session_id = uuid4()
     now = datetime.now(UTC)
     created_at = now
@@ -58,19 +58,6 @@ async def create_session(
 
     await save_session(session, expire_seconds)
     return session
-
-
-async def fetch_session(user_id: int, session_id: str):
-    session = await validate_session(user_id, session_id)
-    response = SessionResponse(
-        session_id=session.session_id,
-        device=session.device,
-        ip_address=session.ip_address,
-        created_at=session.created_at,
-        last_used_at=session.last_used_at,
-    )
-
-    return response
 
 
 async def get_validated_session(user_id: int, session_id: str):
@@ -114,17 +101,5 @@ async def rotate_session_jti(
     )
 
 
-async def list_user_sessions(user_id: int) -> list[SessionResponse]:
-    sessions = await get_all_sessions(user_id)
-    responses = []
-
-    for session in sessions:
-        response = SessionResponse(
-            session_id=session.session_id,
-            device=session.device,
-            ip_address=session.ip_address,
-            created_at=session.created_at,
-            last_used_at=session.last_used_at,
-        )
-        responses.append(response)
-    return responses
+async def list_user_sessions(user_id: int) -> list[Session]:
+    return await get_all_sessions(user_id)
