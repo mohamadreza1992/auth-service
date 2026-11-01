@@ -1,10 +1,9 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Annotated
 
-from app.database.session import get_db
+from fastapi import APIRouter, Depends
+
 from app.dependencies.current_user import AuthContext, get_current_user
-from app.features.users.dependencies import get_user_profile_repository
-from app.features.users.repository import UserProfileRepository
+from app.features.users.dependencies import UserProfileRepoDep
 from app.features.users.schemas import (
     ProfileReplace,
     ProfileUpdate,
@@ -17,11 +16,13 @@ router = APIRouter(
     tags=["users"],
 )
 
+CurrentUser = Annotated[AuthContext, Depends(get_current_user)]
+
 
 @router.get("/profile", response_model=UserProfileResponse)
 async def get_my_profile(
-    auth: AuthContext = Depends(get_current_user),
-    repository: UserProfileRepository = Depends(get_user_profile_repository),
+    auth: CurrentUser,
+    repository: UserProfileRepoDep,
 ):
     return await get_profile(repository, auth.user.id)
 
@@ -29,12 +30,10 @@ async def get_my_profile(
 @router.patch("/profile", response_model=UserProfileResponse)
 async def update_my_profile(
     data: ProfileUpdate,
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_current_user),
-    repository: UserProfileRepository = Depends(get_user_profile_repository),
+    auth: CurrentUser,
+    repository: UserProfileRepoDep,
 ):
     return await update_profile(
-        db,
         repository,
         auth.user.id,
         data.model_dump(mode="json", exclude_unset=True),
@@ -44,15 +43,13 @@ async def update_my_profile(
 @router.put("/profile", response_model=UserProfileResponse)
 async def update_complete_profile(
     data: ProfileReplace,
-    db: AsyncSession = Depends(get_db),
-    auth: AuthContext = Depends(get_current_user),
-    repository: UserProfileRepository = Depends(get_user_profile_repository),
+    auth: CurrentUser,
+    repository: UserProfileRepoDep,
 ):
     return await replace_profile(
-        db,
         repository,
         auth.user.id,
         first_name=data.first_name,
         last_name=data.last_name,
-        avatar_url=str(data.avatar_url),
+        avatar_url=str(data.avatar_url) if data.avatar_url is not None else None,
     )

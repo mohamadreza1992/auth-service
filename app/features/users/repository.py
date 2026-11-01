@@ -1,83 +1,117 @@
-from typing import Protocol
-
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import UserAlreadyExists
+from app.features.users.entities import UserEntity, UserProfileEntity
 from app.features.users.models import User, UserProfile
 
 
-async def get_user_by_id(
-    db: AsyncSession,
-    user_id: int,
-) -> User | None:
-    result = await db.execute(select(User).where(User.id == user_id))
-    return result.scalar_one_or_none()
+class SQLAlchemyUserRepository:
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
 
+    @staticmethod
+    def _to_entity(model: User) -> UserEntity:
+        return UserEntity(
+            id=model.id,
+            email=model.email,
+            password_hash=model.password_hash,
+            is_active=model.is_active,
+            created_at=getattr(model, "created_at", None),
+        )
 
-async def get_user_by_email(
-    db: AsyncSession,
-    email: str,
-) -> User | None:
-    result = await db.execute(select(User).where(User.email == email))
-    return result.scalar_one_or_none()
+    async def get_by_id(self, user_id: int) -> UserEntity | None:
+        result = await self.db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        return self._to_entity(user) if user else None
 
+    async def get_by_email(self, email: str) -> UserEntity | None:
+        result = await self.db.execute(select(User).where(User.email == email))
+        user = result.scalar_one_or_none()
+        return self._to_entity(user) if user else None
 
-async def create_user(
-    db: AsyncSession,
-    user: User,
-) -> User:
-    db.add(user)
-    await db.flush()
-    return user
-
-
-async def create_user_profile(
-    db: AsyncSession,
-    profile: UserProfile,
-) -> UserProfile:
-    db.add(profile)
-    await db.flush()
-    return profile
-
-
-class UserProfileRepository(Protocol):
-    async def get_by_user_id(
+    async def create(
         self,
-        user_id: int,
-    ) -> UserProfile | None: ...
-    async def update(self, user_id: int, data: dict) -> UserProfile | None: ...
+        *,
+        email: str,
+        password_hash: str,
+        is_active: bool = True,
+    ) -> UserEntity:
+        return await self.create_with_profile(
+            email=email,
+            password_hash=password_hash,
+            is_active=is_active,
+        )
+
+    async def create_with_profile(
+        self,
+        *,
+        email: str,
+        password_hash: str,
+        is_active: bool = True,
+    ) -> UserEntity:
+        user = User(
+            email=email,
+            password_hash=password_hash,
+            is_active=is_active,
+        )
+        self.db.add(user)
+        try:
+            await self.db.flush()
+            profile = UserProfile(user_id=user.id)
+            self.db.add(profile)
+            await self.db.commit()
+            return self._to_entity(user)
+        except IntegrityError as exc:
+            await self.db.rollback()
+            raise UserAlreadyExists() from exc
+        except Exception:
+            await self.db.rollback()
+            raise
 
 
 class SQLAlchemyUserProfileRepository:
-    def __init__(self, db: AsyncSession):
+    _ALLOWED_FIELDS = {"first_name", "last_name", "avatar_url"}
+
+    def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_by_user_id(self, user_id: int) -> UserProfile | None:
+    @staticmethod
+    def _to_entity(model: UserProfile) -> UserProfileEntity:
+        return UserProfileEntity(
+            user_id=model.user_id,
+            first_name=model.first_name,
+            last_name=model.last_name,
+            avatar_url=model.avatar_url,
+        )
+
+    async def get_by_user_id(self, user_id: int) -> UserProfileEntity | None:
         result = await self.db.execute(
             select(UserProfile).where(UserProfile.user_id == user_id)
         )
-
-        return result.scalar_one_or_none()
+        profile = result.scalar_one_or_none()
+        return self._to_entity(profile) if profile else None
 
     async def update(
         self,
         user_id: int,
         data: dict[str, str | None],
-    ) -> UserProfile | None:
-        profile = await self.get_by_user_id(user_id)
-
+    ) -> UserProfileEntity | None:
+        result = await self.db.execute(
+            select(UserProfile).where(UserProfile.user_id == user_id)
+        )
+        profile = result.scalar_one_or_none()
         if profile is None:
             return None
 
-        if "first_name" in data:
-            profile.first_name = data["first_name"]
+        for field, value in data.items():
+            if field in self._ALLOWED_FIELDS:
+                setattr(profile, field, value)
 
-        if "last_name" in data:
-            profile.last_name = data["last_name"]
-
-        if "avatar_url" in data:
-            profile.avatar_url = data["avatar_url"]
-
-        await self.db.flush()
-
-        return profile
+        try:
+            await self.db.commit()
+            return self._to_entity(profile)
+        except Exception:
+            await self.db.rollback()
+            raise

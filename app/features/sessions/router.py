@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
-from app.dependencies.current_user import get_current_user
+from app.dependencies.current_user import CurrentUser
+from app.features.sessions.dependencies import SessionLockDep, SessionRepoDep
 from app.features.sessions.entities import Session
 from app.features.sessions.schemas import SessionResponse
 from app.features.sessions.service import (
@@ -17,8 +18,7 @@ router = APIRouter(
 
 
 def to_session_response(session: Session) -> SessionResponse:
-    # Field-by-field on purpose: Session also holds jti and user_id,
-    # which must never reach the API response.
+
     return SessionResponse(
         session_id=session.session_id,
         device=session.device,
@@ -30,25 +30,48 @@ def to_session_response(session: Session) -> SessionResponse:
 
 @router.get("/", response_model=list[SessionResponse])
 async def get_my_sessions(
-    auth=Depends(get_current_user),
+    auth: CurrentUser,
+    repository: SessionRepoDep,
 ):
-    sessions = await list_user_sessions(auth.user.id)
+    sessions = await list_user_sessions(auth.user.id, repository=repository)
     return [to_session_response(session) for session in sessions]
 
 
 @router.get("/{session_id}", response_model=SessionResponse)
-async def get_session(session_id: str, auth=Depends(get_current_user)):
-    session = await get_validated_session(auth.user.id, session_id)
+async def get_session(
+    session_id: str,
+    auth: CurrentUser,
+    repository: SessionRepoDep,
+):
+    session = await get_validated_session(
+        auth.user.id,
+        session_id,
+        repository=repository,
+    )
     return to_session_response(session)
 
 
 @router.delete("/{session_id}", status_code=204)
-async def delete_my_session(session_id: str, auth=Depends(get_current_user)):
-    await revoke_session(auth.user.id, session_id)
+async def delete_my_session(
+    session_id: str,
+    auth: CurrentUser,
+    repository: SessionRepoDep,
+):
+    await revoke_session(
+        auth.user.id,
+        session_id,
+        repository=repository,
+    )
 
 
 @router.delete("/", status_code=204)
 async def delete_all_my_sessions(
-    auth=Depends(get_current_user),
+    auth: CurrentUser,
+    repository: SessionRepoDep,
+    lock_manager: SessionLockDep,
 ):
-    await revoke_all_sessions(auth.user.id)
+    await revoke_all_sessions(
+        auth.user.id,
+        repository=repository,
+        lock_manager=lock_manager,
+    )

@@ -1,8 +1,6 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter
 
-from app.database.session import get_db
-from app.dependencies.current_user import get_current_user
+from app.dependencies.current_user import CurrentUser
 from app.features.auth.schemas import (
     RefreshTokenRequest,
     Token,
@@ -18,6 +16,7 @@ from app.features.auth.service import (
     refresh_access_token,
     register_user,
 )
+from app.features.users.dependencies import UserRepoDep
 
 router = APIRouter(
     prefix="/auth",
@@ -39,18 +38,25 @@ def to_token(pair: TokenPair) -> Token:
 )
 async def register(
     user_data: UserCreate,
-    db: AsyncSession = Depends(get_db),
+    user_repository: UserRepoDep,
 ):
-    return await register_user(db, email=user_data.email, password=user_data.password)
+    return await register_user(
+        user_repository,
+        email=user_data.email,
+        password=user_data.password,
+    )
 
 
 @router.post(
     "/login",
     response_model=Token,
 )
-async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
+async def login(
+    user_data: UserLogin,
+    user_repository: UserRepoDep,
+):
     pair = await login_user(
-        db,
+        user_repository,
         email=user_data.email,
         password=user_data.password,
     )
@@ -58,16 +64,12 @@ async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/me", response_model=UserResponse)
-async def me(
-    auth=Depends(get_current_user),
-):
+async def me(auth: CurrentUser):
     return auth.user
 
 
 @router.post("/logout")
-async def logout(
-    auth=Depends(get_current_user),
-):
+async def logout(auth: CurrentUser):
     await logout_user(
         user_id=auth.user.id,
         session_id=auth.session_id,
@@ -78,12 +80,18 @@ async def logout(
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh(data: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
-    pair = await refresh_access_token(db, refresh_token=data.refresh_token)
+async def refresh(
+    data: RefreshTokenRequest,
+    user_repository: UserRepoDep,
+):
+    pair = await refresh_access_token(
+        user_repository,
+        refresh_token=data.refresh_token,
+    )
     return to_token(pair)
 
 
 @router.post("/logout-all")
-async def logout_all(auth=Depends(get_current_user)):
+async def logout_all(auth: CurrentUser):
     await logout_all_users(auth.user.id)
     return {"message": "Successfully logged out from all devices"}

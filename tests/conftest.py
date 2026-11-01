@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
-from httpx2 import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -16,6 +16,12 @@ from sqlalchemy.ext.asyncio import (
 
 from app.core.config import settings
 from app.database.session import get_db
+from app.features.sessions.dependencies import (
+    get_session_lock_manager,
+    get_session_repository,
+)
+from app.features.sessions.lock import RedisSessionLockManager
+from app.features.sessions.session_store import RedisSessionRepository
 from app.main import app
 
 
@@ -24,13 +30,21 @@ async def client(db_session: AsyncSession, redis_client: Redis):
     async def override_get_db():
         yield db_session
 
+    def override_get_session_repo():
+        return RedisSessionRepository(redis_client)
+
+    def override_get_session_lock():
+        return RedisSessionLockManager(redis_client)
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_session_repository] = override_get_session_repo
+    app.dependency_overrides[get_session_lock_manager] = override_get_session_lock
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
-    ) as client:
-        yield client
+    ) as ac:
+        yield ac
 
     app.dependency_overrides.clear()
 
@@ -50,31 +64,26 @@ async def db_engine() -> AsyncGenerator[AsyncEngine]:
 
 
 @pytest_asyncio.fixture
-async def redis_client(monkeypatch) -> AsyncGenerator[Redis]:
+async def redis_client(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[Redis]:
     client = Redis.from_url(
         settings.redis_url,
         decode_responses=True,
     )
 
-    monkeypatch.setattr(
-        "app.features.sessions.session_store.redis_client",
-        client,
-    )
-
-    monkeypatch.setattr(
-        "app.core.token_blacklist.redis_client",
-        client,
-    )
-    monkeypatch.setattr(
-        "app.features.sessions.lock.redis_client",
-        client,
-    )
+    monkeypatch.setattr("app.core.redis_client.redis_client", client)
+    monkeypatch.setattr("app.core.token_blacklist.redis_client", client)
+    monkeypatch.setattr("app.features.sessions.session_store.redis_client", client)
+    monkeypatch.setattr("app.features.sessions.lock.redis_client", client)
 
     try:
         yield client
     finally:
-        await client.flushdb()
-        await client.aclose()
+        try:
+            await client.flushdb()
+        except Exception:
+            pass
+
+    await client.aclose()
 
 
 @pytest_asyncio.fixture

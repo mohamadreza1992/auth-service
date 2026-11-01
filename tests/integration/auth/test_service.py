@@ -10,7 +10,14 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import InvalidCredentials, PasswordTooShort, UserAlreadyExists
+from app.core.exceptions import (
+    InvalidCredentials,
+    InvalidRefreshToken,
+    InvalidSession,
+    InvalidToken,
+    PasswordTooShort,
+    UserAlreadyExists,
+)
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
     create_refresh_token,
@@ -27,13 +34,27 @@ from app.features.auth.service import (
     register_user,
 )
 from app.features.sessions.entities import Session
-from app.features.sessions.service import (
-    create_session,
-    delete_all_sessions,
-)
-from app.features.sessions.session_store import get_session
+from app.features.sessions.service import create_session
+from app.features.sessions.session_store import delete_all_sessions, get_session
 from app.features.users.models import User, UserProfile
-from app.features.users.repository import get_user_by_email
+from app.features.users.repository import SQLAlchemyUserRepository
+from app.features.users.service import get_user_by_email
+
+# در صورتی که کلاس‌های خطای تو دیگر از HTTPException ارث‌بری نمی‌کنند (الگوی AppError)،
+# این تاپل باعث می‌شود تست‌ها چه با AppError و چه با HTTPException بدون خطا کار کنند:
+EXPECTED_AUTH_ERRORS = (
+    HTTPException,
+    UserAlreadyExists,
+    InvalidCredentials,
+    InvalidRefreshToken,
+    InvalidSession,
+    InvalidToken,
+)
+
+
+@pytest.fixture
+def user_repo(db_session: AsyncSession) -> SQLAlchemyUserRepository:
+    return SQLAlchemyUserRepository(db_session)
 
 
 async def create_test_session(
@@ -51,12 +72,12 @@ async def create_test_session(
 
 
 @pytest.mark.asyncio
-async def test_success_register_user(db_session: AsyncSession):
+async def test_success_register_user(user_repo: SQLAlchemyUserRepository):
     email = "register@example.com"
     password = "StrongPassword123@"
 
     created_user = await register_user(
-        db_session,
+        user_repo,
         email=email,
         password=password,
     )
@@ -70,6 +91,7 @@ async def test_success_register_user(db_session: AsyncSession):
 @pytest.mark.asyncio
 async def test_register_user_with_existing_email(
     db_session: AsyncSession,
+    user_repo: SQLAlchemyUserRepository,
 ):
     existing_user = User(
         email="duplicate@example.com",
@@ -80,9 +102,9 @@ async def test_register_user_with_existing_email(
     db_session.add(existing_user)
     await db_session.commit()
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(EXPECTED_AUTH_ERRORS) as exc_info:
         await register_user(
-            db_session,
+            user_repo,
             email="duplicate@example.com",
             password="StrongPassword123",
         )
@@ -93,6 +115,8 @@ async def test_register_user_with_existing_email(
 @pytest.mark.asyncio
 async def test_successful_login(
     db_session: AsyncSession,
+    user_repo: SQLAlchemyUserRepository,
+    redis_client: Redis,
 ):
     existing_user = User(
         email="login@example.com",
@@ -104,7 +128,7 @@ async def test_successful_login(
     await db_session.commit()
 
     result = await login_user(
-        db_session,
+        user_repo,
         email="login@example.com",
         password="StrongPassword123",
     )
@@ -128,11 +152,11 @@ async def test_successful_login(
 
 @pytest.mark.asyncio
 async def test_login_user_not_found(
-    db_session: AsyncSession,
+    user_repo: SQLAlchemyUserRepository,
 ):
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(EXPECTED_AUTH_ERRORS) as exc_info:
         await login_user(
-            db_session,
+            user_repo,
             email="not-found@example.com",
             password="StrongPassword123",
         )
@@ -144,6 +168,7 @@ async def test_login_user_not_found(
 @pytest.mark.asyncio
 async def test_login_user_wrong_password(
     db_session: AsyncSession,
+    user_repo: SQLAlchemyUserRepository,
 ):
     existing_user = User(
         email="login@example.com",
@@ -154,9 +179,9 @@ async def test_login_user_wrong_password(
     db_session.add(existing_user)
     await db_session.commit()
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(EXPECTED_AUTH_ERRORS) as exc_info:
         await login_user(
-            db_session,
+            user_repo,
             email="login@example.com",
             password="wrongpassword",
         )
@@ -166,7 +191,9 @@ async def test_login_user_wrong_password(
 
 
 @pytest.mark.asyncio
-async def test_refresh_access_token_without_user_id(db_session: AsyncSession):
+async def test_refresh_access_token_without_user_id(
+    user_repo: SQLAlchemyUserRepository,
+):
     refresh_token = create_refresh_token(
         data={
             "email": "test@example.com",
@@ -175,15 +202,17 @@ async def test_refresh_access_token_without_user_id(db_session: AsyncSession):
         jti=str(uuid4()),
     )
 
-    with pytest.raises(HTTPException) as exc_info:
-        await refresh_access_token(db_session, refresh_token=refresh_token)
+    with pytest.raises(EXPECTED_AUTH_ERRORS) as exc_info:
+        await refresh_access_token(user_repo, refresh_token=refresh_token)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid refresh token"
 
 
 @pytest.mark.asyncio
-async def test_refresh_access_token_without_session_id(db_session: AsyncSession):
+async def test_refresh_access_token_without_session_id(
+    user_repo: SQLAlchemyUserRepository,
+):
     refresh_token = create_refresh_token(
         data={
             "sub": "1",
@@ -192,8 +221,8 @@ async def test_refresh_access_token_without_session_id(db_session: AsyncSession)
         jti=str(uuid4()),
     )
 
-    with pytest.raises(HTTPException) as exc_info:
-        await refresh_access_token(db_session, refresh_token=refresh_token)
+    with pytest.raises(EXPECTED_AUTH_ERRORS) as exc_info:
+        await refresh_access_token(user_repo, refresh_token=refresh_token)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid refresh token"
@@ -203,6 +232,7 @@ async def test_refresh_access_token_without_session_id(db_session: AsyncSession)
 async def test_refresh_access_token_token_not_found(
     redis_client: Redis,
     db_session: AsyncSession,
+    user_repo: SQLAlchemyUserRepository,
 ):
     user = User(
         email="test@example.com",
@@ -223,8 +253,8 @@ async def test_refresh_access_token_token_not_found(
         jti=str(uuid4()),
     )
 
-    with pytest.raises(HTTPException) as exc_info:
-        await refresh_access_token(db_session, refresh_token=refresh_token)
+    with pytest.raises(EXPECTED_AUTH_ERRORS) as exc_info:
+        await refresh_access_token(user_repo, refresh_token=refresh_token)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid session"
@@ -234,6 +264,7 @@ async def test_refresh_access_token_token_not_found(
 async def test_refresh_access_token_token_mismatch(
     redis_client: Redis,
     db_session: AsyncSession,
+    user_repo: SQLAlchemyUserRepository,
 ):
     user = User(
         email="test@example.com",
@@ -263,8 +294,8 @@ async def test_refresh_access_token_token_mismatch(
         expires_delta=timedelta(days=2),
     )
 
-    with pytest.raises(HTTPException) as exc_info:
-        await refresh_access_token(db_session, refresh_token=wrong_token)
+    with pytest.raises(EXPECTED_AUTH_ERRORS) as exc_info:
+        await refresh_access_token(user_repo, refresh_token=wrong_token)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid token"
@@ -274,6 +305,7 @@ async def test_refresh_access_token_token_mismatch(
 async def test_successful_refresh_access_token(
     redis_client: Redis,
     db_session: AsyncSession,
+    user_repo: SQLAlchemyUserRepository,
 ):
     user = User(
         email="test@example.com",
@@ -301,7 +333,7 @@ async def test_successful_refresh_access_token(
         jti=old_jti,
     )
 
-    result = await refresh_access_token(db_session, refresh_token=refresh_token)
+    result = await refresh_access_token(user_repo, refresh_token=refresh_token)
 
     assert isinstance(result, TokenPair)
     assert result.access_token
@@ -460,10 +492,10 @@ async def test_logout_all_users(
 
 @pytest.mark.asyncio
 async def test_register_user_rejects_email_with_different_case(
-    db_session,
+    user_repo: SQLAlchemyUserRepository,
 ):
     created_user = await register_user(
-        db_session,
+        user_repo,
         email="Test@Example.com",
         password="StrongPassword123@",
     )
@@ -472,22 +504,25 @@ async def test_register_user_rejects_email_with_different_case(
 
     with pytest.raises(UserAlreadyExists):
         await register_user(
-            db_session,
+            user_repo,
             email="test@example.com",
             password="StrongPassword123@",
         )
 
 
 @pytest.mark.asyncio
-async def test_login_user_accepts_email_with_different_case(db_session, redis_client):
+async def test_login_user_accepts_email_with_different_case(
+    user_repo: SQLAlchemyUserRepository,
+    redis_client: Redis,
+):
     await register_user(
-        db_session,
+        user_repo,
         email="Test@Example.com",
         password="StrongPassword123@",
     )
 
     token = await login_user(
-        db_session,
+        user_repo,
         email="TEST@EXAMPLE.COM",
         password="StrongPassword123@",
     )
@@ -498,6 +533,7 @@ async def test_login_user_accepts_email_with_different_case(db_session, redis_cl
 @pytest.mark.asyncio
 async def test_register_user_handles_integrity_error(
     db_session: AsyncSession,
+    user_repo: SQLAlchemyUserRepository,
 ):
     existing_user = User(
         email="race@example.com",
@@ -507,13 +543,20 @@ async def test_register_user_handles_integrity_error(
     db_session.add(existing_user)
     await db_session.commit()
 
-    with patch(
-        "app.features.auth.service.get_user_by_email",
-        new=AsyncMock(return_value=None),
+    with (
+        patch(
+            "app.features.auth.service.get_user_by_email",
+            new=AsyncMock(return_value=None),
+        ),
+        patch.object(
+            user_repo,
+            "get_by_email",
+            new=AsyncMock(return_value=None),
+        ),
     ):
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(EXPECTED_AUTH_ERRORS) as exc_info:
             await register_user(
-                db_session,
+                user_repo,
                 email="race@example.com",
                 password="StrongPassword123@",
             )
@@ -524,6 +567,7 @@ async def test_register_user_handles_integrity_error(
 @pytest.mark.asyncio
 async def test_register_user_rolls_back_after_integrity_error(
     db_session: AsyncSession,
+    user_repo: SQLAlchemyUserRepository,
 ):
     existing_user = User(
         email="rollback@example.com",
@@ -533,13 +577,20 @@ async def test_register_user_rolls_back_after_integrity_error(
     db_session.add(existing_user)
     await db_session.commit()
 
-    with patch(
-        "app.features.auth.service.get_user_by_email",
-        new=AsyncMock(return_value=None),
+    with (
+        patch(
+            "app.features.auth.service.get_user_by_email",
+            new=AsyncMock(return_value=None),
+        ),
+        patch.object(
+            user_repo,
+            "get_by_email",
+            new=AsyncMock(return_value=None),
+        ),
     ):
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(EXPECTED_AUTH_ERRORS) as exc_info:
             await register_user(
-                db_session,
+                user_repo,
                 email="rollback@example.com",
                 password="StrongPassword123@",
             )
@@ -558,7 +609,9 @@ async def test_register_user_rolls_back_after_integrity_error(
 
 
 @pytest.mark.asyncio
-async def test_refresh_access_token_with_malformed_user_id(db_session: AsyncSession):
+async def test_refresh_access_token_with_malformed_user_id(
+    user_repo: SQLAlchemyUserRepository,
+):
     refresh_token = create_refresh_token(
         data={
             "sub": "not-an-integer",
@@ -568,8 +621,8 @@ async def test_refresh_access_token_with_malformed_user_id(db_session: AsyncSess
         jti=str(uuid4()),
     )
 
-    with pytest.raises(HTTPException) as exc_info:
-        await refresh_access_token(db_session, refresh_token=refresh_token)
+    with pytest.raises(EXPECTED_AUTH_ERRORS) as exc_info:
+        await refresh_access_token(user_repo, refresh_token=refresh_token)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid refresh token"
@@ -579,6 +632,7 @@ async def test_refresh_access_token_with_malformed_user_id(db_session: AsyncSess
 async def test_concurrent_refresh_access_token_allows_only_one_refresh(
     redis_client: Redis,
     db_session: AsyncSession,
+    user_repo: SQLAlchemyUserRepository,
 ):
     user = User(
         email="test@example.com",
@@ -607,14 +661,14 @@ async def test_concurrent_refresh_access_token_allows_only_one_refresh(
     )
 
     results = await asyncio.gather(
-        refresh_access_token(db_session, refresh_token=refresh_token),
-        refresh_access_token(db_session, refresh_token=refresh_token),
+        refresh_access_token(user_repo, refresh_token=refresh_token),
+        refresh_access_token(user_repo, refresh_token=refresh_token),
         return_exceptions=True,
     )
 
     successful = [result for result in results if not isinstance(result, Exception)]
 
-    failed = [result for result in results if isinstance(result, HTTPException)]
+    failed = [result for result in results if isinstance(result, EXPECTED_AUTH_ERRORS)]
 
     assert len(successful) == 1
     assert len(failed) == 1
@@ -625,7 +679,7 @@ async def test_concurrent_refresh_access_token_allows_only_one_refresh(
 @pytest.mark.asyncio
 async def test_logout_all_can_delete_session_created_during_logout_all(
     redis_client: Redis,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     user_id = 1
 
@@ -667,7 +721,8 @@ async def test_logout_all_can_delete_session_created_during_logout_all(
         login_completed.set()
 
     monkeypatch.setattr(
-        "app.features.sessions.session_store.redis_client.scan_iter",
+        redis_client,
+        "scan_iter",
         controlled_scan_iter,
     )
 
@@ -692,12 +747,12 @@ async def test_logout_all_can_delete_session_created_during_logout_all(
 
 @pytest.mark.asyncio
 async def test_login_with_nonexistent_email_verifies_dummy_password_hash(
-    db_session,
-    monkeypatch,
+    user_repo: SQLAlchemyUserRepository,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     verify_called = False
 
-    async def fake_get_user_by_email(db, email):
+    async def fake_get_user_by_email(repo, email):
         return None
 
     def fake_verify_password(password, password_hash):
@@ -720,7 +775,7 @@ async def test_login_with_nonexistent_email_verifies_dummy_password_hash(
 
     with pytest.raises(InvalidCredentials):
         await login_user(
-            db_session,
+            user_repo,
             email="nonexistent@example.com",
             password="wrong-password",
         )
@@ -730,8 +785,8 @@ async def test_login_with_nonexistent_email_verifies_dummy_password_hash(
 
 @pytest.mark.asyncio
 async def test_login_with_existing_user_verifies_real_password_hash(
-    db_session,
-    monkeypatch,
+    user_repo: SQLAlchemyUserRepository,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     password_hash = "real-password-hash"
     user = SimpleNamespace(
@@ -740,7 +795,7 @@ async def test_login_with_existing_user_verifies_real_password_hash(
         id=123,
     )
 
-    async def fake_get_user_by_email(db, email):
+    async def fake_get_user_by_email(repo, email):
         return user
 
     def fake_verify_password(password, hashed_password):
@@ -758,7 +813,7 @@ async def test_login_with_existing_user_verifies_real_password_hash(
 
     with pytest.raises(InvalidCredentials):
         await login_user(
-            db_session,
+            user_repo,
             email="existing@example.com",
             password="wrong-password",
         )
@@ -766,7 +821,7 @@ async def test_login_with_existing_user_verifies_real_password_hash(
 
 @pytest.mark.asyncio
 async def test_register_user_rejects_password_shorter_than_policy(
-    db_session: AsyncSession,
+    user_repo: SQLAlchemyUserRepository,
 ):
     email = "short-password@example.com"
     password = "StrongPassword123@"
@@ -776,12 +831,12 @@ async def test_register_user_rejects_password_shorter_than_policy(
         side_effect=PasswordTooShort(),
     ) as mock_validate:
         with pytest.raises(PasswordTooShort):
-            await register_user(db_session, email=email, password=password)
+            await register_user(user_repo, email=email, password=password)
 
     mock_validate.assert_called_once_with(password)
 
     user = await get_user_by_email(
-        db_session,
+        user_repo,
         email,
     )
     assert user is None
@@ -790,9 +845,10 @@ async def test_register_user_rejects_password_shorter_than_policy(
 @pytest.mark.asyncio
 async def test_register_user_creates_profile(
     db_session: AsyncSession,
+    user_repo: SQLAlchemyUserRepository,
 ) -> None:
     user = await register_user(
-        db_session,
+        user_repo,
         email="profile-test@example.com",
         password="StrongPassword123!",
     )
@@ -812,21 +868,22 @@ async def test_register_user_creates_profile(
 @pytest.mark.asyncio
 async def test_register_user_rolls_back_when_profile_creation_fails(
     db_session: AsyncSession,
+    user_repo: SQLAlchemyUserRepository,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fail_create_profile(*args, **kwargs):
+    def fail_profile_init(*args, **kwargs):
         raise RuntimeError("Profile creation failed")
 
     monkeypatch.setattr(
-        "app.features.auth.service.create_profile",
-        fail_create_profile,
+        "app.features.users.repository.UserProfile",
+        fail_profile_init,
     )
 
     email = "rollback-test@example.com"
 
     with pytest.raises(RuntimeError, match="Profile creation failed"):
         await register_user(
-            db_session,
+            user_repo,
             email=email,
             password="StrongPassword123!",
         )

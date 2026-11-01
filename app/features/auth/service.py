@@ -1,10 +1,9 @@
+import asyncio
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from jose import JWTError
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import (
@@ -36,68 +35,50 @@ from app.features.sessions.service import (
     rotate_session_jti,
     run_with_session_lock,
 )
-from app.features.users.models import User, UserProfile
+from app.features.users.entities import UserEntity
+from app.features.users.ports import UserRepository
 from app.features.users.service import (
-    create_profile,
-    create_user,
+    create_user_with_profile,
     get_user_by_email,
     get_user_by_id,
 )
 
 logger = get_logger(__name__)
 
-
 password_policy = PasswordPolicy()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TokenPair:
     access_token: str
     refresh_token: str
 
 
 async def register_user(
-    db: AsyncSession,
+    user_repository: UserRepository,
     *,
     email: str,
     password: str,
-) -> User:
+) -> UserEntity:
     normalized_email = email.strip().lower()
 
-    existing_user = await get_user_by_email(db, normalized_email)
-
+    existing_user = await get_user_by_email(user_repository, normalized_email)
     if existing_user:
         raise UserAlreadyExists()
 
     password_policy.validate(password)
 
-    user = User(
+    hashed_password = await asyncio.to_thread(hash_password, password)
+
+    return await create_user_with_profile(
+        user_repository,
         email=normalized_email,
-        password_hash=hash_password(password),
-        is_active=True,
+        password_hash=hashed_password,
     )
-
-    try:
-        user = await create_user(db, user)
-
-        await create_profile(
-            db,
-            UserProfile(user_id=user.id),
-        )
-
-        await db.commit()
-        return user
-
-    except IntegrityError as exc:
-        await db.rollback()
-        raise UserAlreadyExists() from exc
-    except Exception:
-        await db.rollback()
-        raise
 
 
 async def login_user(
-    db: AsyncSession,
+    user_repository: UserRepository,
     *,
     email: str,
     password: str,
@@ -105,22 +86,19 @@ async def login_user(
     normalized_email = email.strip().lower()
 
     user = await get_user_by_email(
-        db,
+        user_repository,
         normalized_email,
     )
 
     password_hash_to_verify = user.password_hash if user else DUMMY_PASSWORD_HASH
 
-    if not verify_password(
+    is_valid = await asyncio.to_thread(
+        verify_password,
         password,
         password_hash_to_verify,
-    ):
-        raise InvalidCredentials()
+    )
 
-    if not user:
-        raise InvalidCredentials()
-
-    if not user.is_active:
+    if not is_valid or not user or not user.is_active:
         raise InvalidCredentials()
 
     async def create_login_tokens() -> TokenPair:
@@ -163,7 +141,7 @@ async def login_user(
 
 
 async def refresh_access_token(
-    db: AsyncSession,
+    user_repository: UserRepository,
     *,
     refresh_token: str,
 ) -> TokenPair:
@@ -197,14 +175,11 @@ async def refresh_access_token(
         raise InvalidRefreshToken() from None
 
     user = await get_user_by_id(
-        db,
+        user_repository,
         user_id,
     )
 
-    if user is None:
-        raise InvalidRefreshToken()
-
-    if not user.is_active:
+    if user is None or not user.is_active:
         raise InvalidRefreshToken()
 
     session = await get_validated_session(

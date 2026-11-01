@@ -1,27 +1,45 @@
-from typing import Any
-
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.exceptions import ProfileNotFound
-from app.features.users.models import User, UserProfile
-from app.features.users.repository import (
+from app.features.users.entities import UserEntity, UserProfileEntity
+from app.features.users.ports import (
     UserProfileRepository,
-)
-from app.features.users.repository import (
-    create_user as repository_create_user,
-)
-from app.features.users.repository import (
-    create_user_profile as repository_create_user_profile,
-)
-from app.features.users.repository import (
-    get_user_by_email as repository_get_user_by_email,
-)
-from app.features.users.repository import (
-    get_user_by_id as repository_get_user_by_id,
+    UserRepository,
 )
 
 
-async def get_profile(repository: UserProfileRepository, user_id: int) -> UserProfile:
+async def get_user_by_id(
+    repository: UserRepository,
+    user_id: int,
+) -> UserEntity | None:
+    return await repository.get_by_id(user_id)
+
+
+async def get_user_by_email(
+    repository: UserRepository,
+    email: str,
+) -> UserEntity | None:
+    normalized_email = email.strip().lower()
+    return await repository.get_by_email(normalized_email)
+
+
+async def create_user_with_profile(
+    repository: UserRepository,
+    *,
+    email: str,
+    password_hash: str,
+    is_active: bool = True,
+) -> UserEntity:
+    normalized_email = email.strip().lower()
+    return await repository.create_with_profile(
+        email=normalized_email,
+        password_hash=password_hash,
+        is_active=is_active,
+    )
+
+
+async def get_profile(
+    repository: UserProfileRepository,
+    user_id: int,
+) -> UserProfileEntity:
     profile = await repository.get_by_user_id(user_id)
     if profile is None:
         raise ProfileNotFound()
@@ -29,80 +47,32 @@ async def get_profile(repository: UserProfileRepository, user_id: int) -> UserPr
 
 
 async def update_profile(
-    db: AsyncSession,
     repository: UserProfileRepository,
     user_id: int,
-    fields: dict[str, Any],
-) -> UserProfile:
-    # PATCH semantics: `fields` holds only what the client sent.
-    # A missing key means "leave unchanged"; a key with None means "set to null".
-    try:
-        profile = await repository.update(user_id, fields)
-
-        if profile is None:
-            raise ProfileNotFound()
-
-        await db.commit()
-        return profile
-
-    except Exception:
-        await db.rollback()
-        raise
+    data: dict[str, str | None],
+) -> UserProfileEntity:
+    profile = await repository.update(user_id, data)
+    if profile is None:
+        raise ProfileNotFound()
+    return profile
 
 
 async def replace_profile(
-    db: AsyncSession,
     repository: UserProfileRepository,
     user_id: int,
     *,
-    first_name: str,
-    last_name: str,
-    avatar_url: str,
-) -> UserProfile:
-    try:
-        profile = await repository.update(
-            user_id,
-            {
-                "first_name": first_name,
-                "last_name": last_name,
-                "avatar_url": avatar_url,
-            },
-        )
-
-        if profile is None:
-            raise ProfileNotFound()
-
-        await db.commit()
-        return profile
-
-    except Exception:
-        await db.rollback()
-        raise
-
-
-async def get_user_by_id(
-    db: AsyncSession,
-    user_id: int,
-) -> User | None:
-    return await repository_get_user_by_id(db, user_id)
-
-
-async def get_user_by_email(
-    db: AsyncSession,
-    email: str,
-) -> User | None:
-    return await repository_get_user_by_email(db, email)
-
-
-async def create_user(
-    db: AsyncSession,
-    user: User,
-) -> User:
-    return await repository_create_user(db, user)
-
-
-async def create_profile(
-    db: AsyncSession,
-    profile: UserProfile,
-) -> UserProfile:
-    return await repository_create_user_profile(db, profile)
+    first_name: str | None,
+    last_name: str | None,
+    avatar_url: str | None,
+) -> UserProfileEntity:
+    profile = await repository.update(
+        user_id,
+        {
+            "first_name": first_name,
+            "last_name": last_name,
+            "avatar_url": avatar_url,
+        },
+    )
+    if profile is None:
+        raise ProfileNotFound()
+    return profile
