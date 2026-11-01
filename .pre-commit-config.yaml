@@ -9,7 +9,7 @@ repos:
     hooks:
       - id: import-linter
         name: import-linter
-        entry: uv run lint-imports
+        entry: uv run lint-imports --no-cache
         language: system
         pass_filenames: false
         files: ^(app/.*\.py|\.importlinter)$

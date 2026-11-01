@@ -1,5 +1,7 @@
 [importlinter]
 root_package = app
+include_external_packages = True
+exclude_type_checking_imports = True
 
 [importlinter:contract:layers]
 name = Layers: main > api > dependencies > features > database > core
@@ -54,4 +56,32 @@ source_modules =
     app.dependencies
 forbidden_modules =
     app.features.users.repository
+    app.features.users.models
+allow_indirect_imports = True
+
+[importlinter:contract:services-independent-of-api]
+name = Services must not depend on schemas or FastAPI
+type = forbidden
+source_modules =
+    app.features.auth.service
+    app.features.sessions.service
+    app.features.users.service
+forbidden_modules =
+    app.features.auth.schemas
+    app.features.sessions.schemas
+    app.features.users.schemas
+    fastapi
+allow_indirect_imports = True
+
+[importlinter:contract:services-independent-of-data]
+name = Services must not depend on ORM models, repositories or SQLAlchemy
+type = forbidden
+source_modules =
+    app.features.auth.service
+    app.features.users.service
+    app.features.sessions.service
+forbidden_modules =
+    app.features.users.models
+    app.features.users.repository
+    sqlalchemy
 allow_indirect_imports = True
