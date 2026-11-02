@@ -3,8 +3,8 @@ from datetime import UTC, datetime
 from ipaddress import IPv4Address, IPv6Address
 from uuid import uuid4
 
-from app.core.exceptions import InvalidSession, SessionOperationInProgress
 from app.features.sessions.entities import Session
+from app.features.sessions.exceptions import InvalidSession, SessionOperationInProgress
 from app.features.sessions.lock import (
     acquire_session_lock,
     release_session_lock,

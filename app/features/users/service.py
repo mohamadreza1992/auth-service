@@ -1,5 +1,5 @@
-from app.core.exceptions import ProfileNotFound
 from app.features.users.entities import UserEntity, UserProfileEntity
+from app.features.users.exceptions import ProfileNotFound
 from app.features.users.ports import (
     UserProfileRepository,
     UserRepository,

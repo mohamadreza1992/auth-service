@@ -1,6 +1,6 @@
 import pytest
 
-from app.core.exceptions import (
+from app.features.auth.exceptions import (
     CommonPasswordRejected,
     PasswordTooShort,
     PasswordTooWeak,

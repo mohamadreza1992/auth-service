@@ -1,9 +1,9 @@
-from app.core.exceptions import (
+from app.features.auth.common_password_checker import CommonPasswordChecker
+from app.features.auth.exceptions import (
     CommonPasswordRejected,
     PasswordTooShort,
     PasswordTooWeak,
 )
-from app.features.auth.common_password_checker import CommonPasswordChecker
 
 
 class PasswordPolicy:

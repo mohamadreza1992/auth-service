@@ -5,13 +5,10 @@ from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 
-from app.core.exceptions import (
-    InvalidCredentials,
-    InvalidToken,
-    RevokedToken,
-)
+from app.core.exceptions import InvalidToken
 from app.core.security import decode_access_token
 from app.core.token_blacklist import is_token_blacklisted
+from app.features.auth.exceptions import InvalidCredentials, RevokedToken
 from app.features.sessions.service import (
     get_validated_session,
     refresh_session_activity,

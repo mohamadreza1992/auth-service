@@ -2,12 +2,27 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from httpx import Response
 from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import create_access_token, create_refresh_token, hash_password
 from app.features.users.models import User
+
+
+def assert_error_response(
+    response: Response,
+    *,
+    code: str,
+    message: str,
+) -> None:
+    """Assert the public API error response contract."""
+
+    error = response.json()["error"]
+
+    assert error["code"] == code
+    assert error["message"] == message
 
 
 @pytest.mark.asyncio
@@ -46,7 +61,11 @@ async def test_register_duplicate_email(client):
     )
     assert response.status_code == 200
     assert response_2.status_code == 409
-    assert response_2.json()["detail"] == "Email already registered"
+    assert_error_response(
+        response_2,
+        code="USER_ALREADY_EXISTS",
+        message="User already exists",
+    )
 
 
 @pytest.mark.asyncio
@@ -157,10 +176,13 @@ async def test_login_user_not_found(client):
         "/auth/login",
         json=user_data,
     )
-    data = response.json()
 
     assert response.status_code == 401
-    assert data["detail"] == "Invalid credentials"
+    assert_error_response(
+        response,
+        code="INVALID_CREDENTIALS",
+        message="Invalid email or password",
+    )
 
 
 @pytest.mark.asyncio
@@ -184,11 +206,14 @@ async def test_login_wrong_password(client):
         "/auth/login",
         json=wrong_password_data,
     )
-    data = login_response.json()
 
     assert register_response.status_code == 200
     assert login_response.status_code == 401
-    assert data["detail"] == "Invalid credentials"
+    assert_error_response(
+        login_response,
+        code="INVALID_CREDENTIALS",
+        message="Invalid email or password",
+    )
 
 
 @pytest.mark.asyncio
@@ -258,7 +283,11 @@ async def test_login_inactive_user(
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid credentials"
+    assert_error_response(
+        response,
+        code="INVALID_CREDENTIALS",
+        message="Invalid email or password",
+    )
 
 
 @pytest.mark.asyncio
@@ -328,7 +357,11 @@ async def test_refresh_token_not_found(
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid session"
+    assert_error_response(
+        response,
+        code="INVALID_SESSION",
+        message="Invalid session",
+    )
 
 
 @pytest.mark.asyncio
@@ -347,7 +380,11 @@ async def test_refresh_without_user_id(client):
         },
     )
     assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid refresh token"
+    assert_error_response(
+        response,
+        code="INVALID_REFRESH_TOKEN",
+        message="Invalid refresh token",
+    )
 
 
 @pytest.mark.asyncio
@@ -367,7 +404,11 @@ async def test_refresh_without_session_id(client):
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid refresh token"
+    assert_error_response(
+        response,
+        code="INVALID_REFRESH_TOKEN",
+        message="Invalid refresh token",
+    )
 
 
 @pytest.mark.asyncio
@@ -415,7 +456,11 @@ async def test_refresh_token_reuse_after_rotation(client):
     )
 
     assert reuse_response.status_code == 401
-    assert reuse_response.json()["detail"] == "Invalid token"
+    assert_error_response(
+        reuse_response,
+        code="INVALID_TOKEN",
+        message="Invalid token",
+    )
 
 
 @pytest.mark.asyncio
@@ -446,7 +491,11 @@ async def test_me_access_token_without_user_id(client):
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid credentials"
+    assert_error_response(
+        response,
+        code="INVALID_CREDENTIALS",
+        message="Invalid email or password",
+    )
 
 
 @pytest.mark.asyncio
@@ -486,7 +535,11 @@ async def test_refresh_with_access_token(client):
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid refresh token"
+    assert_error_response(
+        response,
+        code="INVALID_REFRESH_TOKEN",
+        message="Invalid refresh token",
+    )
 
 
 @pytest.mark.asyncio
@@ -525,7 +578,11 @@ async def test_inactive_user_cannot_access_with_old_token(
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid credentials"
+    assert_error_response(
+        response,
+        code="INVALID_CREDENTIALS",
+        message="Invalid email or password",
+    )
 
 
 @pytest.mark.asyncio
@@ -642,7 +699,11 @@ async def test_logout_revokes_refresh_token(client):
     assert login_response.status_code == 200
     assert logout_response.status_code == 200
     assert refresh_response.status_code == 401
-    assert refresh_response.json()["detail"] == "Invalid session"
+    assert_error_response(
+        refresh_response,
+        code="INVALID_SESSION",
+        message="Invalid session",
+    )
 
 
 @pytest.mark.asyncio
@@ -760,8 +821,16 @@ async def test_logout_all_revokes_all_sessions(client):
     assert refresh_response_1.status_code == 401
     assert refresh_response_2.status_code == 401
 
-    assert refresh_response_1.json()["detail"] == "Invalid session"
-    assert refresh_response_2.json()["detail"] == "Invalid session"
+    assert_error_response(
+        refresh_response_1,
+        code="INVALID_SESSION",
+        message="Invalid session",
+    )
+    assert_error_response(
+        refresh_response_2,
+        code="INVALID_SESSION",
+        message="Invalid session",
+    )
 
 
 @pytest.mark.asyncio
@@ -859,7 +928,11 @@ async def test_inactive_user_cannot_refresh(
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid refresh token"
+    assert_error_response(
+        response,
+        code="INVALID_REFRESH_TOKEN",
+        message="Invalid refresh token",
+    )
 
 
 @pytest.mark.asyncio

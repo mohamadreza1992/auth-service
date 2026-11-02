@@ -2,8 +2,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import UserAlreadyExists
 from app.features.users.entities import UserEntity, UserProfileEntity
+from app.features.users.exceptions import UserAlreadyExists
 from app.features.users.models import User, UserProfile
 
 

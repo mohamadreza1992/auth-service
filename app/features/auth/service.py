@@ -6,12 +6,7 @@ from datetime import UTC, datetime
 from jose import JWTError
 
 from app.core.config import settings
-from app.core.exceptions import (
-    InvalidCredentials,
-    InvalidRefreshToken,
-    InvalidToken,
-    UserAlreadyExists,
-)
+from app.core.exceptions import InvalidToken
 from app.core.logging import get_logger
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
@@ -26,6 +21,10 @@ from app.core.token_blacklist import (
     get_refresh_token_rotation_time,
     mark_refresh_token_rotated,
 )
+from app.features.auth.exceptions import (
+    InvalidCredentials,
+    InvalidRefreshToken,
+)
 from app.features.auth.password.policy import PasswordPolicy
 from app.features.sessions.service import (
     create_session,
@@ -36,6 +35,7 @@ from app.features.sessions.service import (
     run_with_session_lock,
 )
 from app.features.users.entities import UserEntity
+from app.features.users.exceptions import UserAlreadyExists
 from app.features.users.ports import UserRepository
 from app.features.users.service import (
     create_user_with_profile,

@@ -1,89 +1,68 @@
-from fastapi import HTTPException, status
+from typing import Any
 
 
-class UserAlreadyExists(HTTPException):
-    def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
-        )
+class AppError(Exception):
+    """Base exception for all application-level errors."""
+
+    code = "APPLICATION_ERROR"
+    message = "An application error occurred"
+
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        self.message = message if message is not None else type(self).message
+        self.details = details
+
+        super().__init__(self.message)
 
 
-class InvalidCredentials(HTTPException):
-    def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-        )
+class AuthenticationError(AppError):
+    """Raised when authentication fails."""
+
+    code = "AUTHENTICATION_ERROR"
+    message = "Authentication failed"
 
 
-class InvalidRefreshToken(HTTPException):
-    def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
-        )
+class AuthorizationError(AppError):
+    """Raised when a user is not allowed to perform an operation."""
+
+    code = "AUTHORIZATION_ERROR"
+    message = "Permission denied"
 
 
-class InvalidToken(HTTPException):
-    def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
+class NotFoundError(AppError):
+    """Raised when a requested resource does not exist."""
+
+    code = "RESOURCE_NOT_FOUND"
+    message = "Resource not found"
 
 
-class RevokedToken(HTTPException):
-    def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has been revoked",
-        )
+class ConflictError(AppError):
+    """Raised when an operation conflicts with the current state."""
+
+    code = "RESOURCE_CONFLICT"
+    message = "Resource conflict"
 
 
-class InvalidSession(HTTPException):
-    def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid session",
-        )
+class RuleViolationError(AppError):
+    """Raised when a business rule is violated."""
+
+    code = "BUSINESS_RULE_VIOLATION"
+    message = "Business rule violation"
 
 
-class SessionOperationInProgress(HTTPException):
-    def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Session operation is already in progress",
-        )
+class InfrastructureError(AppError):
+    """Raised when an infrastructure dependency fails."""
+
+    code = "INFRASTRUCTURE_ERROR"
+    message = "An infrastructure error occurred"
 
 
-class ProfileNotFound(HTTPException):
-    def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="profile not found",
-        )
+class InvalidToken(AuthenticationError):
+    """Raised when a token is invalid."""
 
-
-class PasswordTooShort(HTTPException):
-    def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Password must be at least 12 characters long",
-        )
-
-
-class PasswordTooWeak(HTTPException):
-    def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Password does not meet complexity requirements",
-        )
-
-
-class CommonPasswordRejected(HTTPException):
-    def __init__(self):
-        super().__init__(
-            status_code=422,
-            detail="Password is too common",
-        )
+    code = "INVALID_TOKEN"
+    message = "Invalid token"

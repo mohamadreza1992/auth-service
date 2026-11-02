@@ -5,19 +5,11 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import (
-    InvalidCredentials,
-    InvalidRefreshToken,
-    InvalidSession,
-    InvalidToken,
-    PasswordTooShort,
-    UserAlreadyExists,
-)
+from app.core.exceptions import AppError
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
     create_refresh_token,
@@ -25,6 +17,10 @@ from app.core.security import (
     hash_password,
 )
 from app.core.token_blacklist import is_token_blacklisted
+from app.features.auth.exceptions import (
+    InvalidCredentials,
+    PasswordTooShort,
+)
 from app.features.auth.service import (
     TokenPair,
     login_user,
@@ -36,20 +32,12 @@ from app.features.auth.service import (
 from app.features.sessions.entities import Session
 from app.features.sessions.service import create_session
 from app.features.sessions.session_store import delete_all_sessions, get_session
+from app.features.users.exceptions import UserAlreadyExists
 from app.features.users.models import User, UserProfile
 from app.features.users.repository import SQLAlchemyUserRepository
 from app.features.users.service import get_user_by_email
 
-# در صورتی که کلاس‌های خطای تو دیگر از HTTPException ارث‌بری نمی‌کنند (الگوی AppError)،
-# این تاپل باعث می‌شود تست‌ها چه با AppError و چه با HTTPException بدون خطا کار کنند:
-EXPECTED_AUTH_ERRORS = (
-    HTTPException,
-    UserAlreadyExists,
-    InvalidCredentials,
-    InvalidRefreshToken,
-    InvalidSession,
-    InvalidToken,
-)
+EXPECTED_AUTH_ERRORS = (AppError,)
 
 
 @pytest.fixture
@@ -109,7 +97,7 @@ async def test_register_user_with_existing_email(
             password="StrongPassword123",
         )
 
-    assert exc_info.value.status_code == 409
+    assert exc_info.value.code == "USER_ALREADY_EXISTS"
 
 
 @pytest.mark.asyncio
@@ -161,8 +149,8 @@ async def test_login_user_not_found(
             password="StrongPassword123",
         )
 
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "Invalid credentials"
+    assert exc_info.value.code == "INVALID_CREDENTIALS"
+    assert exc_info.value.message == "Invalid email or password"
 
 
 @pytest.mark.asyncio
@@ -186,8 +174,8 @@ async def test_login_user_wrong_password(
             password="wrongpassword",
         )
 
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "Invalid credentials"
+    assert exc_info.value.code == "INVALID_CREDENTIALS"
+    assert exc_info.value.message == "Invalid email or password"
 
 
 @pytest.mark.asyncio
@@ -205,8 +193,8 @@ async def test_refresh_access_token_without_user_id(
     with pytest.raises(EXPECTED_AUTH_ERRORS) as exc_info:
         await refresh_access_token(user_repo, refresh_token=refresh_token)
 
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "Invalid refresh token"
+    assert exc_info.value.code == "INVALID_REFRESH_TOKEN"
+    assert exc_info.value.message == "Invalid refresh token"
 
 
 @pytest.mark.asyncio
@@ -224,8 +212,8 @@ async def test_refresh_access_token_without_session_id(
     with pytest.raises(EXPECTED_AUTH_ERRORS) as exc_info:
         await refresh_access_token(user_repo, refresh_token=refresh_token)
 
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "Invalid refresh token"
+    assert exc_info.value.code == "INVALID_REFRESH_TOKEN"
+    assert exc_info.value.message == "Invalid refresh token"
 
 
 @pytest.mark.asyncio
@@ -256,8 +244,8 @@ async def test_refresh_access_token_token_not_found(
     with pytest.raises(EXPECTED_AUTH_ERRORS) as exc_info:
         await refresh_access_token(user_repo, refresh_token=refresh_token)
 
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "Invalid session"
+    assert exc_info.value.code == "INVALID_SESSION"
+    assert exc_info.value.message == "Invalid session"
 
 
 @pytest.mark.asyncio
@@ -297,8 +285,8 @@ async def test_refresh_access_token_token_mismatch(
     with pytest.raises(EXPECTED_AUTH_ERRORS) as exc_info:
         await refresh_access_token(user_repo, refresh_token=wrong_token)
 
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "Invalid token"
+    assert exc_info.value.code == "INVALID_TOKEN"
+    assert exc_info.value.message == "Invalid token"
 
 
 @pytest.mark.asyncio
@@ -561,7 +549,7 @@ async def test_register_user_handles_integrity_error(
                 password="StrongPassword123@",
             )
 
-    assert exc_info.value.status_code == 409
+    assert exc_info.value.code == "USER_ALREADY_EXISTS"
 
 
 @pytest.mark.asyncio
@@ -595,7 +583,7 @@ async def test_register_user_rolls_back_after_integrity_error(
                 password="StrongPassword123@",
             )
 
-    assert exc_info.value.status_code == 409
+    assert exc_info.value.code == "USER_ALREADY_EXISTS"
 
     new_user = User(
         email="after-error@example.com",
@@ -624,8 +612,8 @@ async def test_refresh_access_token_with_malformed_user_id(
     with pytest.raises(EXPECTED_AUTH_ERRORS) as exc_info:
         await refresh_access_token(user_repo, refresh_token=refresh_token)
 
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "Invalid refresh token"
+    assert exc_info.value.code == "INVALID_REFRESH_TOKEN"
+    assert exc_info.value.message == "Invalid refresh token"
 
 
 @pytest.mark.asyncio
@@ -666,14 +654,14 @@ async def test_concurrent_refresh_access_token_allows_only_one_refresh(
         return_exceptions=True,
     )
 
-    successful = [result for result in results if not isinstance(result, Exception)]
+    successful = [result for result in results if isinstance(result, TokenPair)]
 
-    failed = [result for result in results if isinstance(result, EXPECTED_AUTH_ERRORS)]
+    failed = [result for result in results if isinstance(result, AppError)]
 
     assert len(successful) == 1
     assert len(failed) == 1
-    assert failed[0].status_code == 401
-    assert failed[0].detail == "Invalid token"
+    assert failed[0].code == "INVALID_TOKEN"
+    assert failed[0].message == "Invalid token"
 
 
 @pytest.mark.asyncio
